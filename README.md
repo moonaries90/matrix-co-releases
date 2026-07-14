@@ -4,7 +4,7 @@ This repository publishes verified Matrix Co Desktop and TUI release artifacts, 
 
 ## Download the Desktop app
 
-Download the latest Apple Silicon DMG from this repository's GitHub Releases. Desktop builds are currently unsigned and not notarized, so macOS may require right-clicking the app and choosing **Open** on first launch.
+Download the latest Apple Silicon DMG from this repository's GitHub Releases. Desktop builds are currently ad-hoc signed but not Developer ID signed or notarized, so macOS may require right-clicking the app and choosing **Open** on first launch.
 
 ## Install the TUI with Homebrew
 
