@@ -1,8 +1,8 @@
 class MatrixCo < Formula
   desc "Local-first multi-agent workspace with a terminal interface"
   homepage "https://matrix-co.pages.dev/"
-  url "https://github.com/moonaries90/matrix-co-releases/releases/download/tui-v0.0.1/matrix-co-tui-0.0.1-darwin-arm64.tar.gz"
-  sha256 "7ba614efda348c3c21c49f8ffff999d7f9b74d778c755b356e98ba8273f9cad9"
+  url "https://github.com/moonaries90/matrix-co-releases/releases/download/tui-v0.0.2/matrix-co-tui-0.0.2-darwin-arm64.tar.gz"
+  sha256 "66bbfc3eabd6535c1aef6a4f9444603722a96b79d90d8963f09a59628384ebac"
   license "MIT"
 
   depends_on arch: :arm64

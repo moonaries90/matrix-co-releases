@@ -1,6 +1,10 @@
 # Matrix Co Releases
 
-This repository publishes verified Matrix Co release artifacts and the Homebrew formula for the macOS TUI distribution.
+This repository publishes verified Matrix Co Desktop and TUI release artifacts, plus the Homebrew formula for the macOS TUI distribution.
+
+## Download the Desktop app
+
+Download the latest Apple Silicon DMG from this repository's GitHub Releases. Desktop builds are currently unsigned and not notarized, so macOS may require right-clicking the app and choosing **Open** on first launch.
 
 ## Install the TUI with Homebrew
 
@@ -40,12 +44,21 @@ brew untap moonaries90/matrix-co
 
 ## Maintainer release flow
 
-From this repository:
+Build the TUI from this repository:
 
 ```bash
-scripts/package-tui-release.sh 0.0.1
+scripts/package-tui-release.sh 0.0.2
 ```
 
 The script rebuilds the package from the sibling `matrix-co` source checkout by default, validates the required runtime files and architecture, and writes a versioned archive plus `SHA256SUMS` under `dist/tui-v<version>/`.
 
 Commit and push the release files, then publish the generated archive and `SHA256SUMS` under the matching `tui-v<version>` GitHub Release. Verify the public Formula URL, checksum, and installed command smoke before announcing the release.
+
+Build the Desktop app from the sibling `matrix-co` source checkout:
+
+```bash
+cd ../matrix-co
+bash scripts/package-desktop.sh
+```
+
+Publish `dist/matrix-co-desktop/Matrix Co.dmg` under a `desktop-YYYY.MM.DD` GitHub Release in this repository. Verify the DMG checksum and contents before updating the website download link.
