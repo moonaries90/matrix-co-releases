@@ -1,0 +1,101 @@
+name: Build Windows desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: matrix-co branch, tag, or commit SHA to build
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ inputs.source_ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package unsigned Windows desktop
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out private Matrix Co source
+        uses: actions/checkout@v6
+        with:
+          repository: moonaries90/matrix-co
+          ref: ${{ inputs.source_ref }}
+          path: matrix-co
+          ssh-key: ${{ secrets.MATRIX_CO_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            matrix-co/apps/desktop/package-lock.json
+            matrix-co/packages/claude-sdk-agent/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            matrix-co -> target
+            matrix-co/apps/desktop/src-tauri -> target
+
+      - name: Record toolchain versions
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+          node --version
+          npm --version
+
+      - name: Build Windows installer and portable package
+        shell: pwsh
+        working-directory: matrix-co
+        run: ./scripts/package-desktop.ps1
+
+      - name: Verify package structure and record checksums
+        shell: pwsh
+        working-directory: matrix-co
+        run: |
+          $dist = Resolve-Path "dist/matrix-co-desktop-windows"
+          $installer = Get-ChildItem $dist -Filter "*.exe" -File
+          if ($installer.Count -ne 1) {
+            throw "Expected exactly one NSIS installer, found $($installer.Count)"
+          }
+          $portable = Join-Path $dist "portable/Matrix Co.exe"
+          if (-not (Test-Path $portable -PathType Leaf)) {
+            throw "Portable Matrix Co.exe is missing"
+          }
+          $signature = Get-AuthenticodeSignature $installer.FullName
+          if ($signature.Status -ne "NotSigned") {
+            throw "Expected the current package to be unsigned, got $($signature.Status)"
+          }
+          Get-ChildItem $dist -Recurse -File |
+            Sort-Object FullName |
+            ForEach-Object {
+              $hash = Get-FileHash $_.FullName -Algorithm SHA256
+              $relative = [IO.Path]::GetRelativePath($dist, $_.FullName).Replace('\', '/')
+              "$($hash.Hash.ToLowerInvariant())  $relative"
+            } |
+            Set-Content (Join-Path $dist "SHA256SUMS") -Encoding utf8
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v6
+        with:
+          name: matrix-co-desktop-windows-${{ github.run_number }}
+          path: matrix-co/dist/matrix-co-desktop-windows/
+          if-no-files-found: error
+          retention-days: 14

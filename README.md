@@ -62,3 +62,16 @@ bash scripts/package-desktop.sh
 ```
 
 Publish `dist/matrix-co-desktop/Matrix Co.dmg` under a `desktop-YYYY.MM.DD` GitHub Release in this repository. Verify the DMG checksum and contents before updating the website download link.
+
+### Windows CI package
+
+Run the **Build Windows desktop** workflow manually and provide a branch, tag,
+or commit SHA from the private `moonaries90/matrix-co` repository. The workflow
+builds the existing `scripts/package-desktop.ps1` pipeline on a pinned
+`windows-2022` runner and uploads the unsigned NSIS installer and portable
+package as a 14-day Actions artifact.
+
+The workflow reads the private source repository through the dedicated,
+read-only deploy key stored in the `MATRIX_CO_SOURCE_DEPLOY_KEY` Actions secret.
+It intentionally does not publish a GitHub Release until the downloaded
+artifact has been verified.
