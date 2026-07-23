@@ -52,6 +52,10 @@ brew untap moonaries90/matrix-co
 
 ## Maintainer release flow
 
+For the complete cross-platform Desktop procedure, including exact-SHA CI
+builds, artifact verification, GitHub Release publication, and website updates,
+see [`docs/desktop-release.md`](docs/desktop-release.md).
+
 Build the TUI from this repository:
 
 ```bash
