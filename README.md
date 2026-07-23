@@ -4,7 +4,15 @@ This repository publishes verified Matrix Co Desktop and TUI release artifacts, 
 
 ## Download the Desktop app
 
-Download the latest Apple Silicon DMG from this repository's GitHub Releases. Desktop builds are currently ad-hoc signed but not Developer ID signed or notarized, so macOS may require right-clicking the app and choosing **Open** on first launch.
+Download the latest Apple Silicon macOS DMG or Windows x64 installer from this
+repository's GitHub Releases.
+
+Desktop builds do not currently use a public code-signing certificate:
+
+- macOS builds are ad-hoc signed but not Developer ID signed or notarized, so
+  macOS may require right-clicking the app and choosing **Open** on first launch.
+- Windows builds are unsigned, so Microsoft Defender SmartScreen may show an
+  unrecognized-app warning.
 
 ## Install the TUI with Homebrew
 
@@ -61,7 +69,10 @@ cd ../matrix-co
 bash scripts/package-desktop.sh
 ```
 
-Publish `dist/matrix-co-desktop/Matrix Co.dmg` under a `desktop-YYYY.MM.DD` GitHub Release in this repository. Verify the DMG checksum and contents before updating the website download link.
+For normal releases, run both Desktop CI workflows with the same source commit,
+verify their artifacts, and publish the macOS DMG, Windows installer, Windows
+portable archive, and combined checksums under a `desktop-YYYY.MM.DD` GitHub
+Release. Update the website only after all published assets are verified.
 
 ### Windows CI package
 
