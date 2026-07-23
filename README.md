@@ -75,3 +75,11 @@ The workflow reads the private source repository through the dedicated,
 read-only deploy key stored in the `MATRIX_CO_SOURCE_DEPLOY_KEY` Actions secret.
 It intentionally does not publish a GitHub Release until the downloaded
 artifact has been verified.
+
+### macOS CI package
+
+Run the **Build macOS desktop** workflow with the same source commit used for
+Windows. It packages the existing `scripts/package-desktop.sh` pipeline on an
+Apple Silicon runner, verifies the app's ad-hoc signature and architecture,
+validates the DMG, and uploads the DMG plus its SHA-256 checksum as a 14-day
+Actions artifact.
