@@ -97,5 +97,6 @@ jobs:
         with:
           name: matrix-co-desktop-windows-${{ github.run_number }}
           path: matrix-co/dist/matrix-co-desktop-windows/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
