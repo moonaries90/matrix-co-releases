@@ -13,7 +13,7 @@ on:
         default: ""
         type: string
       publish_release:
-        description: Publish after all four assets are uploaded and verified
+        description: Publish after all six assets are uploaded and verified
         required: true
         default: true
         type: boolean
@@ -566,15 +566,44 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
-    name: Create draft, upload complete asset set, then publish
+  sign-feed:
+    name: Normalize packages and sign update feed
     needs: [package-mac, package-win]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
+    timeout-minutes: 45
+    outputs:
+      tag: ${{ steps.prepare.outputs.tag }}
+      title: ${{ steps.prepare.outputs.title }}
+      source_commit: ${{ steps.prepare.outputs.source_commit }}
+      release_epoch: ${{ steps.prepare.outputs.release_epoch }}
 
     steps:
+      - name: Check out private Matrix Co source
+        uses: actions/checkout@v6
+        with:
+          repository: moonaries90/matrix-co
+          ref: ${{ inputs.source_ref }}
+          path: matrix-co
+          ssh-key: ${{ secrets.MATRIX_CO_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache update feed signer build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: matrix-co -> target
+          key: update-feed-signer
+
+      - name: Build update feed signer before loading the private key
+        shell: bash
+        working-directory: matrix-co
+        run: |
+          set -euo pipefail
+          cargo build --release -p matrix-core --bin matrixd
+
       - name: Download signed runtime release
         uses: actions/download-artifact@v6
         with:
@@ -593,7 +622,7 @@ jobs:
           name: desktop-package-windows
           path: ${{ runner.temp }}/windows
 
-      - name: Prepare and verify normalized public assets
+      - name: Normalize public packages and prepare feed input
         id: prepare
         shell: bash
         env:
@@ -642,11 +671,21 @@ jobs:
           node - \
             "$release" \
             "$mac/package-evidence-macos.json" \
-            "$windows/package-evidence-windows.json" <<'NODE'
+            "$windows/package-evidence-windows.json" \
+            "$assets" \
+            "$RUNNER_TEMP/feed-input.json" \
+            "$tag" <<'NODE'
           const crypto = require("crypto");
           const fs = require("fs");
           const path = require("path");
-          const [releaseDir, macEvidencePath, winEvidencePath] = process.argv.slice(2);
+          const [
+            releaseDir,
+            macEvidencePath,
+            winEvidencePath,
+            assetsDir,
+            feedInputPath,
+            tag,
+          ] = process.argv.slice(2);
           const metadata = JSON.parse(
             fs.readFileSync(path.join(releaseDir, "release-metadata.json"), "utf8")
           );
@@ -660,6 +699,7 @@ jobs:
             "matrix-runtime-catalog",
             "catalog.sig"
           );
+          const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
           const digest = (file) =>
             crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
           const expected = {
@@ -689,6 +729,53 @@ jobs:
               }
             });
           });
+
+          const versions = new Set(
+            catalog.entries.map((entry) => entry.bundleId.split("-")[0].slice(1))
+          );
+          if (versions.size !== 1) {
+            throw new Error("catalog bundle versions disagree");
+          }
+          const version = [...versions][0];
+          const baseUrl =
+            `https://github.com/moonaries90/matrix-co-releases/releases/download/${tag}`;
+          const packageFor = (name, target, format) => {
+            const file = path.join(assetsDir, name);
+            return {
+              kind: "desktop",
+              target,
+              format,
+              url: `${baseUrl}/${name}`,
+              sha256: digest(file),
+              size: fs.statSync(file).size,
+            };
+          };
+          const macTarget = {
+            triple: "aarch64-apple-darwin",
+            arch: "aarch64",
+            os: "macos",
+          };
+          const windowsTarget = {
+            triple: "x86_64-pc-windows-msvc",
+            arch: "x86_64",
+            os: "windows",
+          };
+          const feed = {
+            schema: "matrix-update-feed-v1",
+            releaseEpoch: metadata.releaseEpoch,
+            version,
+            sourceCommit: metadata.sourceCommit,
+            packages: [
+              packageFor("Matrix.Co-macos-arm64.dmg", macTarget, "dmg"),
+              packageFor("Matrix.Co-windows-x64-setup.exe", windowsTarget, "exe"),
+              packageFor(
+                "Matrix.Co-windows-x64-portable.zip",
+                windowsTarget,
+                "zip"
+              ),
+            ],
+          };
+          fs.writeFileSync(feedInputPath, JSON.stringify(feed) + "\n");
           NODE
 
           (
@@ -722,11 +809,155 @@ jobs:
             echo "release_epoch=$release_epoch"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Decode key and sign update feed
+        shell: bash
+        working-directory: matrix-co
+        env:
+          MATRIX_CO_RELEASE_PRIVATE_KEY_B64: ${{ secrets.MATRIX_CO_RELEASE_PRIVATE_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          trust_dir="$RUNNER_TEMP/feed-signing"
+          private_key="$trust_dir/catalog-private.key"
+          feed_output="$RUNNER_TEMP/feed-output"
+          assets="$RUNNER_TEMP/public-assets"
+          mkdir -p "$trust_dir"
+          trap 'rm -f "$private_key"' EXIT
+          printf '%s' "$MATRIX_CO_RELEASE_PRIVATE_KEY_B64" |
+            base64 --decode > "$private_key"
+          unset MATRIX_CO_RELEASE_PRIVATE_KEY_B64
+          test -s "$private_key"
+
+          target/release/matrixd update-feed generate \
+            --input "$RUNNER_TEMP/feed-input.json" \
+            --output-dir "$feed_output" \
+            --private-key "$private_key"
+          target/release/matrixd update-feed verify --feed-dir "$feed_output"
+          cp "$feed_output/latest.json" "$assets/latest.json"
+          cp "$feed_output/latest.json.sig" "$assets/latest.json.sig"
+
+          while IFS= read -r -d '' output_file; do
+            if cmp -s "$private_key" "$output_file"; then
+              echo "private key bytes appeared in signed feed artifact" >&2
+              exit 1
+            fi
+          done < <(find "$assets" -type f -print0)
+
+      - name: Verify signed feed binds the exact public packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - "$RUNNER_TEMP/public-assets" <<'NODE'
+          const crypto = require("crypto");
+          const fs = require("fs");
+          const path = require("path");
+          const assetsDir = process.argv[2];
+          const feed = JSON.parse(
+            fs.readFileSync(path.join(assetsDir, "latest.json"), "utf8")
+          );
+          const expectedNames = [
+            "Matrix.Co-macos-arm64.dmg",
+            "Matrix.Co-windows-x64-setup.exe",
+            "Matrix.Co-windows-x64-portable.zip",
+          ];
+          if (feed.packages.length !== expectedNames.length) {
+            throw new Error("feed package count does not match public package set");
+          }
+          feed.packages.forEach((entry, index) => {
+            const name = expectedNames[index];
+            const file = path.join(assetsDir, name);
+            const digest =
+              crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+            const size = fs.statSync(file).size;
+            if (
+              entry.url !==
+                `https://github.com/moonaries90/matrix-co-releases/releases/download/${{ steps.prepare.outputs.tag }}/${name}` ||
+              entry.sha256 !== digest ||
+              entry.size !== size
+            ) {
+              throw new Error(`${name} signed feed evidence does not match asset`);
+            }
+          });
+          NODE
+
+      - name: Upload signed public desktop assets
+        uses: actions/upload-artifact@v6
+        with:
+          name: signed-public-desktop-assets
+          path: ${{ runner.temp }}/public-assets/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Create draft, upload all signed assets, then publish
+    needs: sign-feed
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download signed public desktop assets
+        uses: actions/download-artifact@v6
+        with:
+          name: signed-public-desktop-assets
+          path: ${{ runner.temp }}/public-assets
+
+      - name: Verify release-ready asset set and prepare notes
+        id: prepare
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.sign-feed.outputs.tag }}
+          RELEASE_TITLE: ${{ needs.sign-feed.outputs.title }}
+          SOURCE_COMMIT: ${{ needs.sign-feed.outputs.source_commit }}
+          RELEASE_EPOCH: ${{ needs.sign-feed.outputs.release_epoch }}
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/public-assets"
+          node - "$assets" <<'NODE'
+          const crypto = require("crypto");
+          const fs = require("fs");
+          const path = require("path");
+          const assetsDir = process.argv[2];
+          const expectedNames = [
+            "Matrix.Co-macos-arm64.dmg",
+            "Matrix.Co-windows-x64-setup.exe",
+            "Matrix.Co-windows-x64-portable.zip",
+            "SHA256SUMS.txt",
+            "latest.json",
+            "latest.json.sig",
+          ];
+          const actualNames = fs.readdirSync(assetsDir).sort();
+          if (
+            JSON.stringify(actualNames) !== JSON.stringify([...expectedNames].sort())
+          ) {
+            throw new Error(`prepared asset set mismatch: ${JSON.stringify(actualNames)}`);
+          }
+          for (const name of expectedNames) {
+            const file = path.join(assetsDir, name);
+            if (!fs.statSync(file).isFile() || fs.statSync(file).size === 0) {
+              throw new Error(`prepared asset is missing or empty: ${name}`);
+            }
+          }
+          NODE
+
+          (
+            cd "$assets"
+            sha256sum -c SHA256SUMS.txt
+          )
+
+          {
+            echo "tag=$RELEASE_TAG"
+            echo "title=$RELEASE_TITLE"
+            echo "source_commit=$SOURCE_COMMIT"
+            echo "release_epoch=$RELEASE_EPOCH"
+          } >> "$GITHUB_OUTPUT"
+
           {
             echo "## Matrix Co Desktop"
             echo
-            echo "- Source commit: \`$source_commit\`"
-            echo "- Release epoch: \`$release_epoch\`"
+            echo "- Source commit: \`$SOURCE_COMMIT\`"
+            echo "- Release epoch: \`$RELEASE_EPOCH\`"
             echo "- macOS: Apple Silicon, ad-hoc signed, not notarized"
             echo "- Windows: x64, unsigned"
             echo
@@ -734,10 +965,17 @@ jobs:
             echo
             echo "### Assets"
             echo
-            while read -r digest filename; do
+            for filename in \
+              Matrix.Co-macos-arm64.dmg \
+              Matrix.Co-windows-x64-setup.exe \
+              Matrix.Co-windows-x64-portable.zip \
+              SHA256SUMS.txt \
+              latest.json \
+              latest.json.sig; do
+              digest="$(sha256sum "$assets/$filename" | cut -d ' ' -f 1)"
               size="$(stat -c '%s' "$assets/$filename")"
               echo "- \`$filename\` — $size bytes — SHA-256 \`$digest\`"
-            done < "$assets/SHA256SUMS.txt"
+            done
           } > "$RUNNER_TEMP/release-notes.md"
 
       - name: Create draft release
@@ -759,7 +997,7 @@ jobs:
             --title "$RELEASE_TITLE" \
             --notes-file "$RUNNER_TEMP/release-notes.md"
 
-      - name: Upload all four release assets
+      - name: Upload all six release assets
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -772,7 +1010,9 @@ jobs:
             "$assets/Matrix.Co-macos-arm64.dmg" \
             "$assets/Matrix.Co-windows-x64-setup.exe" \
             "$assets/Matrix.Co-windows-x64-portable.zip" \
-            "$assets/SHA256SUMS.txt"
+            "$assets/SHA256SUMS.txt" \
+            "$assets/latest.json" \
+            "$assets/latest.json.sig"
 
       - name: Verify complete draft asset set
         shell: bash
@@ -795,6 +1035,8 @@ jobs:
             "Matrix.Co-windows-x64-setup.exe",
             "Matrix.Co-windows-x64-portable.zip",
             "SHA256SUMS.txt",
+            "latest.json",
+            "latest.json.sig",
           ];
           const actualNames = release.assets.map((asset) => asset.name).sort();
           if (

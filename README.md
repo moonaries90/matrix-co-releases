@@ -76,9 +76,10 @@ bash scripts/package-desktop.sh
 For a normal release, run the **Release dual-platform desktop** workflow once
 with an immutable source commit. It exports both native runtime closures,
 assembles one signed dual-platform catalog, packages macOS and Windows from that
-same catalog, creates a draft, uploads and verifies all four public assets, and
-only then publishes the release. Update the website only after the workflow has
-published and verified the release.
+same catalog, signs an update feed over the exact package bytes, creates a
+draft, uploads and verifies all six public assets, and only then publishes the
+release. Update the website only after the workflow has published and verified
+the release.
 
 ```bash
 gh workflow run release-desktop.yml \

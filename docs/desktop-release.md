@@ -31,7 +31,7 @@ gh workflow run release-desktop.yml \
 ```
 
 The default tag is `desktop-YYYY.MM.DD`, and successful runs publish only after
-the complete four-asset draft has been verified. To exercise the full build
+the complete six-asset draft has been verified. To exercise the full build
 without publishing, provide a unique test tag and keep the result as a draft:
 
 ```bash
@@ -44,10 +44,14 @@ gh workflow run release-desktop.yml \
 
 The workflow runs the native exports in parallel, then assembles one signed
 catalog only after both artifacts exist. Both package jobs consume that exact
-catalog. The catalog epoch comes from `release-epoch` at the selected source
-commit. The catalog key is decoded only inside the assembly job from
-`MATRIX_CO_RELEASE_PRIVATE_KEY_B64`; the private source is read through the
-read-only `MATRIX_CO_SOURCE_DEPLOY_KEY`.
+catalog. After both desktop packages exist, a dedicated `sign-feed` job
+normalizes the three downloadable packages and signs a feed that binds their
+exact SHA-256 digests and byte sizes. The catalog epoch comes from
+`release-epoch` at the selected source commit. The catalog key is decoded only
+inside the assembly and feed-signing jobs from
+`MATRIX_CO_RELEASE_PRIVATE_KEY_B64`; both jobs use restrictive permissions,
+remove the decoded key on exit, and unset the secret after decoding. The
+private source is read through the read-only `MATRIX_CO_SOURCE_DEPLOY_KEY`.
 
 Find and watch the dispatched run:
 
@@ -67,12 +71,15 @@ The run itself verifies:
 - The Windows workflow verified the installer is currently `NotSigned`.
 - Both package evidence documents match the same catalog JSON, signature,
   source commit, tree OID, and epoch.
-- The draft contains exactly the four normalized assets, with remote byte sizes
-  and SHA-256 digests equal to the locally prepared files.
+- The signed feed contains SHA-256 digests and byte sizes equal to the exact
+  normalized packages passed to the publish job.
+- The draft contains exactly six normalized assets: three desktop packages,
+  `SHA256SUMS.txt`, `latest.json`, and `latest.json.sig`. Remote byte sizes and
+  SHA-256 digests must equal the locally prepared files.
 
 ## 3. Verify the published release
 
-The publish job creates a draft first, uploads all four assets, verifies the
+The publish job creates a draft first, uploads all six assets, verifies the
 complete remote asset set, and only then clears the draft flag. A failed upload
 therefore cannot become the latest public release.
 
