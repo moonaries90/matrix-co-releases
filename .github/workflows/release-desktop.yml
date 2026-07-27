@@ -441,7 +441,7 @@ jobs:
           "TMP=C:\t" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "RELEASE_DIR=C:\release" |
             Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "PACKAGE_OUT=C:\pkg-out" |
+          "PACKAGE_OUT=$env:GITHUB_WORKSPACE\matrix-co\dist\matrix-co-desktop" |
             Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Set up Node.js
@@ -476,7 +476,7 @@ jobs:
         shell: pwsh
         working-directory: matrix-co
         run: |
-          .\scripts\package-desktop.ps1 $env:RELEASE_DIR $env:PACKAGE_OUT
+          .\scripts\package-desktop.ps1 $env:RELEASE_DIR
 
       - name: Verify Windows package and catalog identity
         shell: pwsh
@@ -561,7 +561,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: desktop-package-windows
-          path: C:\pkg-out\
+          path: matrix-co\dist\matrix-co-desktop\
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
