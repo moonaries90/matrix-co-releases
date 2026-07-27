@@ -1,0 +1,855 @@
+name: Release dual-platform desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Immutable matrix-co commit SHA to release
+        required: true
+        type: string
+      release_tag:
+        description: Optional release tag; defaults to desktop-YYYY.MM.DD
+        required: false
+        default: ""
+        type: string
+      publish_release:
+        description: Publish after all four assets are uploaded and verified
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dual-platform-desktop-${{ inputs.source_ref }}-${{ inputs.release_tag || 'automatic' }}
+  cancel-in-progress: false
+
+jobs:
+  export-mac:
+    name: Export macOS runtime artifact
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out private Matrix Co source
+        uses: actions/checkout@v6
+        with:
+          repository: moonaries90/matrix-co
+          ref: ${{ inputs.source_ref }}
+          path: matrix-co
+          ssh-key: ${{ secrets.MATRIX_CO_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Require Apple Silicon runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(uname -m)" == "arm64" ]]
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: matrix-co/packages/claude-sdk-agent/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: matrix-co -> target
+          key: runtime-export-macos
+
+      - name: Export macOS runtime artifact
+        shell: bash
+        working-directory: matrix-co
+        env:
+          ARTIFACT_OUT: ${{ runner.temp }}/runtime-artifact-aarch64-apple-darwin
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+          bash scripts/export-runtime-artifact.sh "$ARTIFACT_OUT"
+
+      - name: Upload macOS runtime artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: runtime-artifact-aarch64-apple-darwin
+          path: ${{ runner.temp }}/runtime-artifact-aarch64-apple-darwin/
+          if-no-files-found: error
+          retention-days: 7
+
+  export-win:
+    name: Export Windows runtime artifact
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out private Matrix Co source
+        uses: actions/checkout@v6
+        with:
+          repository: moonaries90/matrix-co
+          ref: ${{ inputs.source_ref }}
+          path: matrix-co
+          ssh-key: ${{ secrets.MATRIX_CO_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Pin short Windows paths
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path C:\t -Force | Out-Null
+          "TEMP=C:\t" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TMP=C:\t" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "ARTIFACT_OUT=C:\rt-out" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: matrix-co/packages/claude-sdk-agent/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: matrix-co -> target
+          key: runtime-export-windows
+
+      - name: Export Windows runtime artifact
+        shell: pwsh
+        working-directory: matrix-co
+        run: |
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+          .\scripts\export-runtime-artifact.ps1 $env:ARTIFACT_OUT
+
+      - name: Upload Windows runtime artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: runtime-artifact-x86_64-pc-windows-msvc
+          path: C:\rt-out\
+          if-no-files-found: error
+          retention-days: 7
+
+  assemble:
+    name: Assemble signed dual-platform runtime catalog
+    needs: [export-mac, export-win]
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out private Matrix Co source
+        uses: actions/checkout@v6
+        with:
+          repository: moonaries90/matrix-co
+          ref: ${{ inputs.source_ref }}
+          path: matrix-co
+          ssh-key: ${{ secrets.MATRIX_CO_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache catalog assembler build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: matrix-co -> target
+          key: catalog-assembler
+
+      - name: Download macOS runtime artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: runtime-artifact-aarch64-apple-darwin
+          path: ${{ runner.temp }}/runtime-mac
+
+      - name: Download Windows runtime artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: runtime-artifact-x86_64-pc-windows-msvc
+          path: ${{ runner.temp }}/runtime-win
+
+      - name: Decode key and assemble signed catalog
+        shell: bash
+        working-directory: matrix-co
+        env:
+          MATRIX_CO_RELEASE_PRIVATE_KEY_B64: ${{ secrets.MATRIX_CO_RELEASE_PRIVATE_KEY_B64 }}
+          MAC_ARTIFACT: ${{ runner.temp }}/runtime-mac
+          WIN_ARTIFACT: ${{ runner.temp }}/runtime-win
+          RELEASE_OUT: ${{ runner.temp }}/matrix-runtime-release
+          TRUST_DIR: ${{ runner.temp }}/matrix-release-trust
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$TRUST_DIR/state"
+          private_key="$TRUST_DIR/catalog-private.key"
+          epoch_state="$TRUST_DIR/state/catalog-release-epoch"
+          trap 'rm -f "$private_key"' EXIT
+          printf '%s' "$MATRIX_CO_RELEASE_PRIVATE_KEY_B64" |
+            base64 --decode > "$private_key"
+          unset MATRIX_CO_RELEASE_PRIVATE_KEY_B64
+          test -s "$private_key"
+
+          export MATRIX_CO_RELEASE_PRIVATE_KEY="$private_key"
+          export MATRIX_CO_RELEASE_EPOCH_STATE="$epoch_state"
+          bash scripts/assemble-release.sh \
+            "$MAC_ARTIFACT" \
+            "$WIN_ARTIFACT" \
+            "$RELEASE_OUT"
+
+          tracked_epoch="$(tr -d '[:space:]' < release-epoch)"
+          source_commit="$(git rev-parse HEAD)"
+          node - "$RELEASE_OUT" "$tracked_epoch" "$source_commit" <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+          const [releaseDir, expectedEpochText, checkedOutCommit] =
+            process.argv.slice(2);
+          if (!/^[1-9][0-9]*$/.test(expectedEpochText)) {
+            throw new Error("tracked release-epoch is not a positive integer");
+          }
+          const expectedEpoch = Number(expectedEpochText);
+          const metadata = JSON.parse(
+            fs.readFileSync(path.join(releaseDir, "release-metadata.json"), "utf8")
+          );
+          const catalog = JSON.parse(
+            fs.readFileSync(
+              path.join(releaseDir, "matrix-runtime-catalog", "catalog.json"),
+              "utf8"
+            )
+          );
+          const triples = catalog.entries.map((entry) => entry.target?.triple).sort();
+          const expectedTriples = [
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc",
+          ];
+          if (
+            metadata.releaseEpoch !== expectedEpoch ||
+            catalog.releaseEpoch !== expectedEpoch
+          ) {
+            throw new Error(
+              `release epoch mismatch: tracked=${expectedEpoch}, ` +
+                `metadata=${metadata.releaseEpoch}, catalog=${catalog.releaseEpoch}`
+            );
+          }
+          if (JSON.stringify(triples) !== JSON.stringify(expectedTriples)) {
+            throw new Error(`catalog target set mismatch: ${JSON.stringify(triples)}`);
+          }
+          if (
+            metadata.sourceCommit !== catalog.sourceCommit ||
+            metadata.sourceCommit !== checkedOutCommit
+          ) {
+            throw new Error("release source commit does not match the checked-out source");
+          }
+          NODE
+
+          while IFS= read -r -d '' output_file; do
+            if cmp -s "$private_key" "$output_file"; then
+              echo "private key bytes appeared in release output" >&2
+              exit 1
+            fi
+          done < <(find "$RELEASE_OUT" -type f -print0)
+
+      - name: Upload signed runtime release
+        uses: actions/upload-artifact@v6
+        with:
+          name: signed-runtime-release
+          path: ${{ runner.temp }}/matrix-runtime-release/
+          if-no-files-found: error
+          retention-days: 7
+
+  package-mac:
+    name: Package macOS desktop from signed catalog
+    needs: assemble
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out private Matrix Co source
+        uses: actions/checkout@v6
+        with:
+          repository: moonaries90/matrix-co
+          ref: ${{ inputs.source_ref }}
+          path: matrix-co
+          ssh-key: ${{ secrets.MATRIX_CO_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Require Apple Silicon runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(uname -m)" == "arm64" ]]
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            matrix-co/apps/desktop/package-lock.json
+            matrix-co/packages/claude-sdk-agent/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache macOS package build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            matrix-co -> target
+            matrix-co/apps/desktop/src-tauri -> target
+          key: desktop-package-macos
+
+      - name: Download signed runtime release
+        uses: actions/download-artifact@v6
+        with:
+          name: signed-runtime-release
+          path: ${{ runner.temp }}/matrix-runtime-release
+
+      - name: Package macOS desktop
+        shell: bash
+        working-directory: matrix-co
+        env:
+          RELEASE_DIR: ${{ runner.temp }}/matrix-runtime-release
+          PACKAGE_OUT: ${{ runner.temp }}/matrix-co-desktop-mac
+        run: |
+          set -euo pipefail
+          bash scripts/package-desktop.sh "$RELEASE_DIR" "$PACKAGE_OUT"
+
+      - name: Verify macOS package and catalog identity
+        shell: bash
+        working-directory: matrix-co
+        env:
+          RELEASE_DIR: ${{ runner.temp }}/matrix-runtime-release
+          PACKAGE_OUT: ${{ runner.temp }}/matrix-co-desktop-mac
+        run: |
+          set -euo pipefail
+          app="$PACKAGE_OUT/Matrix Co.app"
+          dmg="$PACKAGE_OUT/Matrix Co.dmg"
+          embedded="$app/Contents/Resources/matrix-runtime-catalog"
+          test -d "$app"
+          test -f "$dmg"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          hdiutil verify "$dmg"
+          file "$app/Contents/MacOS/matrix-desktop" | grep -q arm64
+          cmp "$RELEASE_DIR/matrix-runtime-catalog/catalog.json" "$embedded/catalog.json"
+          cmp "$RELEASE_DIR/matrix-runtime-catalog/catalog.sig" "$embedded/catalog.sig"
+
+          node - "$RELEASE_DIR" "$app" "$PACKAGE_OUT/package-evidence-macos.json" <<'NODE'
+          const crypto = require("crypto");
+          const fs = require("fs");
+          const path = require("path");
+          const [releaseDir, appDir, outputPath] = process.argv.slice(2);
+          const metadata = JSON.parse(
+            fs.readFileSync(path.join(releaseDir, "release-metadata.json"), "utf8")
+          );
+          const catalogPath = path.join(
+            releaseDir,
+            "matrix-runtime-catalog",
+            "catalog.json"
+          );
+          const signaturePath = path.join(
+            releaseDir,
+            "matrix-runtime-catalog",
+            "catalog.sig"
+          );
+          const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
+          const entry = catalog.entries.find(
+            (candidate) =>
+              candidate.target?.triple === "aarch64-apple-darwin"
+          );
+          if (!entry) throw new Error("macOS catalog entry is missing");
+          const packageId = fs
+            .readFileSync(
+              path.join(appDir, "Contents", "Resources", "matrix-package-bundle-id"),
+              "utf8"
+            )
+            .trim();
+          if (packageId !== entry.bundleId) {
+            throw new Error("macOS package bundle id does not match the signed catalog");
+          }
+          const digest = (file) =>
+            crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+          fs.writeFileSync(
+            outputPath,
+            JSON.stringify({
+              platform: "aarch64-apple-darwin",
+              sourceCommit: metadata.sourceCommit,
+              sourceTreeOid: metadata.sourceTreeOid,
+              releaseEpoch: metadata.releaseEpoch,
+              catalogSha256: digest(catalogPath),
+              catalogSignatureSha256: digest(signaturePath),
+              bundleId: packageId,
+            }) + "\n"
+          );
+          NODE
+
+      - name: Upload macOS desktop package
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-package-macos
+          path: |
+            ${{ runner.temp }}/matrix-co-desktop-mac/Matrix Co.dmg
+            ${{ runner.temp }}/matrix-co-desktop-mac/package-evidence-macos.json
+          if-no-files-found: error
+          retention-days: 7
+
+  package-win:
+    name: Package Windows desktop from signed catalog
+    needs: assemble
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out private Matrix Co source
+        uses: actions/checkout@v6
+        with:
+          repository: moonaries90/matrix-co
+          ref: ${{ inputs.source_ref }}
+          path: matrix-co
+          ssh-key: ${{ secrets.MATRIX_CO_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Pin short Windows paths
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path C:\t -Force | Out-Null
+          "TEMP=C:\t" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TMP=C:\t" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "RELEASE_DIR=C:\release" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PACKAGE_OUT=C:\pkg-out" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            matrix-co/apps/desktop/package-lock.json
+            matrix-co/packages/claude-sdk-agent/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Windows package build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            matrix-co -> target
+            matrix-co/apps/desktop/src-tauri -> target
+          key: desktop-package-windows
+
+      - name: Download signed runtime release
+        uses: actions/download-artifact@v6
+        with:
+          name: signed-runtime-release
+          path: C:\release
+
+      - name: Package Windows desktop
+        shell: pwsh
+        working-directory: matrix-co
+        run: |
+          .\scripts\package-desktop.ps1 $env:RELEASE_DIR $env:PACKAGE_OUT
+
+      - name: Verify Windows package and catalog identity
+        shell: pwsh
+        working-directory: matrix-co
+        run: |
+          $installer = @(
+            Get-ChildItem -LiteralPath $env:PACKAGE_OUT -File -Filter "*.exe"
+          )
+          if ($installer.Count -ne 1) {
+            throw "Expected exactly one NSIS installer, found $($installer.Count)"
+          }
+          $portable = Join-Path $env:PACKAGE_OUT "portable"
+          $desktopExe = Join-Path $portable "Matrix Co.exe"
+          if (-not (Test-Path -LiteralPath $desktopExe -PathType Leaf)) {
+            throw "Portable Matrix Co.exe is missing"
+          }
+          $signature = Get-AuthenticodeSignature $installer[0].FullName
+          if ($signature.Status -ne "NotSigned") {
+            throw "Expected unsigned installer, got $($signature.Status)"
+          }
+
+          $releaseCatalog = Join-Path $env:RELEASE_DIR "matrix-runtime-catalog"
+          $embeddedCatalog = Join-Path $portable "resources\matrix-runtime-catalog"
+          foreach ($member in @("catalog.json", "catalog.sig")) {
+            $expected = (Get-FileHash (Join-Path $releaseCatalog $member) -Algorithm SHA256).Hash
+            $actual = (Get-FileHash (Join-Path $embeddedCatalog $member) -Algorithm SHA256).Hash
+            if (-not $expected.Equals($actual, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "Windows embedded $member does not match the signed release"
+            }
+          }
+
+          $metadata = Get-Content `
+            (Join-Path $env:RELEASE_DIR "release-metadata.json") -Raw |
+            ConvertFrom-Json
+          $catalog = Get-Content `
+            (Join-Path $releaseCatalog "catalog.json") -Raw |
+            ConvertFrom-Json
+          $entry = @(
+            $catalog.entries |
+              Where-Object { $_.target.triple -ceq "x86_64-pc-windows-msvc" }
+          )
+          if ($entry.Count -ne 1) {
+            throw "Windows catalog must contain exactly one Windows entry"
+          }
+          $packageId = (
+            Get-Content `
+              (Join-Path $portable "resources\matrix-package-bundle-id") -Raw
+          ).Trim()
+          if ($packageId -cne $entry[0].bundleId) {
+            throw "Windows package bundle id does not match the signed catalog"
+          }
+          $trackedEpoch = [int]((
+            Get-Content (Join-Path (Get-Location) "release-epoch") -Raw
+          ).Trim())
+          if (
+            $metadata.releaseEpoch -ne $trackedEpoch -or
+            $catalog.releaseEpoch -ne $trackedEpoch
+          ) {
+            throw "Windows package release epoch does not match tracked release-epoch"
+          }
+          $evidence = [ordered]@{
+            platform = "x86_64-pc-windows-msvc"
+            sourceCommit = $metadata.sourceCommit
+            sourceTreeOid = $metadata.sourceTreeOid
+            releaseEpoch = $metadata.releaseEpoch
+            catalogSha256 = (
+              Get-FileHash (Join-Path $releaseCatalog "catalog.json") -Algorithm SHA256
+            ).Hash.ToLowerInvariant()
+            catalogSignatureSha256 = (
+              Get-FileHash (Join-Path $releaseCatalog "catalog.sig") -Algorithm SHA256
+            ).Hash.ToLowerInvariant()
+            bundleId = $packageId
+          }
+          $evidenceJson = $evidence | ConvertTo-Json -Compress
+          [IO.File]::WriteAllText(
+            (Join-Path $env:PACKAGE_OUT "package-evidence-windows.json"),
+            $evidenceJson + [Environment]::NewLine,
+            [Text.UTF8Encoding]::new($false)
+          )
+
+      - name: Upload Windows desktop package
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-package-windows
+          path: C:\pkg-out\
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Create draft, upload complete asset set, then publish
+    needs: [package-mac, package-win]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download signed runtime release
+        uses: actions/download-artifact@v6
+        with:
+          name: signed-runtime-release
+          path: ${{ runner.temp }}/release
+
+      - name: Download macOS package
+        uses: actions/download-artifact@v6
+        with:
+          name: desktop-package-macos
+          path: ${{ runner.temp }}/mac
+
+      - name: Download Windows package
+        uses: actions/download-artifact@v6
+        with:
+          name: desktop-package-windows
+          path: ${{ runner.temp }}/windows
+
+      - name: Prepare and verify normalized public assets
+        id: prepare
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          release="$RUNNER_TEMP/release"
+          mac="$RUNNER_TEMP/mac"
+          windows="$RUNNER_TEMP/windows"
+          assets="$RUNNER_TEMP/public-assets"
+          mkdir "$assets"
+
+          if [[ -n "$REQUESTED_TAG" ]]; then
+            tag="$REQUESTED_TAG"
+          else
+            tag="desktop-$(date -u +%Y.%m.%d)"
+          fi
+          [[ "$tag" =~ ^desktop-[0-9A-Za-z][0-9A-Za-z._-]{0,79}$ ]] || {
+            echo "release tag has invalid grammar: $tag" >&2
+            exit 1
+          }
+
+          dmg_count="$(find "$mac" -maxdepth 1 -type f -name '*.dmg' | wc -l)"
+          installer_count="$(
+            find "$windows" -maxdepth 1 -type f -name '*.exe' | wc -l
+          )"
+          [[ "$dmg_count" -eq 1 ]] || {
+            echo "expected exactly one macOS DMG, found $dmg_count" >&2
+            exit 1
+          }
+          [[ "$installer_count" -eq 1 ]] || {
+            echo "expected exactly one Windows installer, found $installer_count" >&2
+            exit 1
+          }
+          dmg="$(find "$mac" -maxdepth 1 -type f -name '*.dmg')"
+          installer="$(find "$windows" -maxdepth 1 -type f -name '*.exe')"
+          test -d "$windows/portable"
+
+          cp "$dmg" "$assets/Matrix.Co-macos-arm64.dmg"
+          cp "$installer" "$assets/Matrix.Co-windows-x64-setup.exe"
+          (
+            cd "$windows/portable"
+            zip -q -r "$assets/Matrix.Co-windows-x64-portable.zip" .
+          )
+
+          node - \
+            "$release" \
+            "$mac/package-evidence-macos.json" \
+            "$windows/package-evidence-windows.json" <<'NODE'
+          const crypto = require("crypto");
+          const fs = require("fs");
+          const path = require("path");
+          const [releaseDir, macEvidencePath, winEvidencePath] = process.argv.slice(2);
+          const metadata = JSON.parse(
+            fs.readFileSync(path.join(releaseDir, "release-metadata.json"), "utf8")
+          );
+          const catalogPath = path.join(
+            releaseDir,
+            "matrix-runtime-catalog",
+            "catalog.json"
+          );
+          const signaturePath = path.join(
+            releaseDir,
+            "matrix-runtime-catalog",
+            "catalog.sig"
+          );
+          const digest = (file) =>
+            crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+          const expected = {
+            sourceCommit: metadata.sourceCommit,
+            sourceTreeOid: metadata.sourceTreeOid,
+            releaseEpoch: metadata.releaseEpoch,
+            catalogSha256: digest(catalogPath),
+            catalogSignatureSha256: digest(signaturePath),
+          };
+          const evidence = [
+            JSON.parse(fs.readFileSync(macEvidencePath, "utf8")),
+            JSON.parse(fs.readFileSync(winEvidencePath, "utf8")),
+          ];
+          const expectedPlatforms = [
+            "aarch64-apple-darwin",
+            "x86_64-pc-windows-msvc",
+          ];
+          evidence.forEach((item, index) => {
+            if (item.platform !== expectedPlatforms[index]) {
+              throw new Error(`package evidence platform mismatch: ${item.platform}`);
+            }
+            Object.entries(expected).forEach(([key, value]) => {
+              if (item[key] !== value) {
+                throw new Error(
+                  `${item.platform} ${key} mismatch: expected=${value}, actual=${item[key]}`
+                );
+              }
+            });
+          });
+          NODE
+
+          (
+            cd "$assets"
+            sha256sum \
+              Matrix.Co-macos-arm64.dmg \
+              Matrix.Co-windows-x64-setup.exe \
+              Matrix.Co-windows-x64-portable.zip > SHA256SUMS.txt
+            sha256sum -c SHA256SUMS.txt
+          )
+
+          metadata="$release/release-metadata.json"
+          source_commit="$(node -p "require(process.argv[1]).sourceCommit" "$metadata")"
+          release_epoch="$(node -p "require(process.argv[1]).releaseEpoch" "$metadata")"
+          version="$(
+            node - "$release/matrix-runtime-catalog/catalog.json" <<'NODE'
+          const catalog = require(process.argv[2]);
+          const versions = new Set(
+            catalog.entries.map((entry) => entry.bundleId.split("-")[0].slice(1))
+          );
+          if (versions.size !== 1) throw new Error("catalog bundle versions disagree");
+          process.stdout.write([...versions][0]);
+          NODE
+          )"
+          title="Matrix Co Desktop ${tag#desktop-} (v${version}, epoch ${release_epoch})"
+
+          {
+            echo "tag=$tag"
+            echo "title=$title"
+            echo "source_commit=$source_commit"
+            echo "release_epoch=$release_epoch"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Matrix Co Desktop"
+            echo
+            echo "- Source commit: \`$source_commit\`"
+            echo "- Release epoch: \`$release_epoch\`"
+            echo "- macOS: Apple Silicon, ad-hoc signed, not notarized"
+            echo "- Windows: x64, unsigned"
+            echo
+            echo "Third-party provider CLIs are not bundled."
+            echo
+            echo "### Assets"
+            echo
+            while read -r digest filename; do
+              size="$(stat -c '%s' "$assets/$filename")"
+              echo "- \`$filename\` — $size bytes — SHA-256 \`$digest\`"
+            done < "$assets/SHA256SUMS.txt"
+          } > "$RUNNER_TEMP/release-notes.md"
+
+      - name: Create draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+          RELEASE_TITLE: ${{ steps.prepare.outputs.title }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "release already exists: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
+
+      - name: Upload all four release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/public-assets"
+          gh release upload "$RELEASE_TAG" \
+            "$assets/Matrix.Co-macos-arm64.dmg" \
+            "$assets/Matrix.Co-windows-x64-setup.exe" \
+            "$assets/Matrix.Co-windows-x64-portable.zip" \
+            "$assets/SHA256SUMS.txt"
+
+      - name: Verify complete draft asset set
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --json isDraft,assets > "$RUNNER_TEMP/release.json"
+          node - "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/public-assets" <<'NODE'
+          const crypto = require("crypto");
+          const fs = require("fs");
+          const path = require("path");
+          const [releasePath, assetsDir] = process.argv.slice(2);
+          const release = JSON.parse(fs.readFileSync(releasePath, "utf8"));
+          if (!release.isDraft) throw new Error("release was published before verification");
+          const expectedNames = [
+            "Matrix.Co-macos-arm64.dmg",
+            "Matrix.Co-windows-x64-setup.exe",
+            "Matrix.Co-windows-x64-portable.zip",
+            "SHA256SUMS.txt",
+          ];
+          const actualNames = release.assets.map((asset) => asset.name).sort();
+          if (
+            JSON.stringify(actualNames) !==
+            JSON.stringify([...expectedNames].sort())
+          ) {
+            throw new Error(`release asset set mismatch: ${JSON.stringify(actualNames)}`);
+          }
+          for (const asset of release.assets) {
+            const localPath = path.join(assetsDir, asset.name);
+            const localSize = fs.statSync(localPath).size;
+            const localDigest =
+              "sha256:" +
+              crypto.createHash("sha256").update(fs.readFileSync(localPath)).digest("hex");
+            if (asset.size !== localSize || asset.digest !== localDigest) {
+              throw new Error(
+                `${asset.name} remote evidence mismatch: ` +
+                  `size=${asset.size}/${localSize}, digest=${asset.digest}/${localDigest}`
+              );
+            }
+          }
+          NODE
+
+      - name: Publish verified release
+        if: ${{ inputs.publish_release }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release edit "$RELEASE_TAG" --draft=false
+
+      - name: Record release evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+          SOURCE_COMMIT: ${{ steps.prepare.outputs.source_commit }}
+          RELEASE_EPOCH: ${{ steps.prepare.outputs.release_epoch }}
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Desktop release evidence"
+            echo
+            echo "- Tag: \`$RELEASE_TAG\`"
+            echo "- Source: \`$SOURCE_COMMIT\`"
+            echo "- Epoch: \`$RELEASE_EPOCH\`"
+            echo "- Requested publication: \`$PUBLISH_RELEASE\`"
+            echo
+            gh release view "$RELEASE_TAG" \
+              --json isDraft,url,assets \
+              --jq '"- URL: \(.url)\n- Draft: \(.isDraft)\n" +
+                (.assets[] | "- \(.name): \(.size) bytes, \(.digest)")'
+          } >> "$GITHUB_STEP_SUMMARY"

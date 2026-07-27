@@ -73,10 +73,21 @@ cd ../matrix-co
 bash scripts/package-desktop.sh
 ```
 
-For normal releases, run both Desktop CI workflows with the same source commit,
-verify their artifacts, and publish the macOS DMG, Windows installer, Windows
-portable archive, and combined checksums under a `desktop-YYYY.MM.DD` GitHub
-Release. Update the website only after all published assets are verified.
+For a normal release, run the **Release dual-platform desktop** workflow once
+with an immutable source commit. It exports both native runtime closures,
+assembles one signed dual-platform catalog, packages macOS and Windows from that
+same catalog, creates a draft, uploads and verifies all four public assets, and
+only then publishes the release. Update the website only after the workflow has
+published and verified the release.
+
+```bash
+gh workflow run release-desktop.yml \
+  --repo moonaries90/matrix-co-releases \
+  -f source_ref=<full-matrix-co-commit-sha>
+```
+
+The older platform-specific build workflows remain available for package
+diagnostics; they are not the normal release path.
 
 ### Windows CI package
 
