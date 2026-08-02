@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: matrix-co branch, tag, or commit SHA to build
+        description: nonet branch, tag, or commit SHA to build
         required: true
         default: main
         type: string
@@ -23,12 +23,12 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Check out private Matrix Co source
+      - name: Check out private Nonet source
         uses: actions/checkout@v6
         with:
-          repository: moonaries90/matrix-co
+          repository: moonaries90/nonet
           ref: ${{ inputs.source_ref }}
-          path: matrix-co
+          path: nonet
           ssh-key: ${{ secrets.MATRIX_CO_SOURCE_DEPLOY_KEY }}
           persist-credentials: false
 
@@ -44,8 +44,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
-            matrix-co/apps/desktop/package-lock.json
-            matrix-co/packages/claude-sdk-agent/package-lock.json
+            nonet/apps/desktop/package-lock.json
+            nonet/packages/claude-sdk-agent/package-lock.json
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -56,8 +56,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            matrix-co -> target
-            matrix-co/apps/desktop/src-tauri -> target
+            nonet -> target
+            nonet/apps/desktop/src-tauri -> target
 
       - name: Record toolchain versions
         shell: bash
@@ -72,32 +72,32 @@ jobs:
 
       - name: Build macOS app and DMG
         shell: bash
-        working-directory: matrix-co
+        working-directory: nonet
         run: ./scripts/package-desktop.sh
 
       - name: Verify app, DMG, architecture, and checksums
         shell: bash
-        working-directory: matrix-co
+        working-directory: nonet
         run: |
           set -euo pipefail
-          dist="dist/matrix-co-desktop"
-          app="$dist/Matrix Co.app"
-          dmg="$dist/Matrix Co.dmg"
+          dist="dist/nonet-desktop"
+          app="$dist/Nonet.app"
+          dmg="$dist/Nonet.dmg"
           test -d "$app"
           test -f "$dmg"
-          test -x "$app/Contents/MacOS/matrix-desktop"
-          test -x "$app/Contents/MacOS/matrixd"
+          test -x "$app/Contents/MacOS/nonet-desktop"
+          test -x "$app/Contents/MacOS/nonetd"
           codesign --verify --deep --strict --verbose=2 "$app"
           hdiutil verify "$dmg"
-          file "$app/Contents/MacOS/matrix-desktop" | grep -q "arm64"
+          file "$app/Contents/MacOS/nonet-desktop" | grep -q "arm64"
           shasum -a 256 "$dmg" > "$dist/SHA256SUMS-macos"
 
       - name: Upload macOS package
         uses: actions/upload-artifact@v6
         with:
-          name: matrix-co-desktop-macos-${{ github.run_number }}
+          name: nonet-desktop-macos-${{ github.run_number }}
           path: |
-            matrix-co/dist/matrix-co-desktop/Matrix Co.dmg
-            matrix-co/dist/matrix-co-desktop/SHA256SUMS-macos
+            nonet/dist/nonet-desktop/Nonet.dmg
+            nonet/dist/nonet-desktop/SHA256SUMS-macos
           if-no-files-found: error
           retention-days: 14

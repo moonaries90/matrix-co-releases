@@ -1,6 +1,6 @@
-# Matrix Co Releases
+# Nonet Releases
 
-This repository publishes verified Matrix Co Desktop and TUI release artifacts, plus the Homebrew formula for the macOS TUI distribution.
+This repository publishes verified Nonet Desktop and TUI release artifacts, plus the Homebrew formula for the macOS TUI distribution.
 
 ## Download the Desktop app
 
@@ -16,38 +16,38 @@ Desktop builds do not currently use a public code-signing certificate:
 
 ## Install the TUI with Homebrew
 
-Matrix Co TUI currently supports Apple Silicon Macs running macOS 11 or later.
+Nonet TUI currently supports Apple Silicon Macs running macOS 11 or later.
 
 ```bash
-brew tap moonaries90/matrix-co https://github.com/moonaries90/matrix-co-releases.git
-brew install moonaries90/matrix-co/matrix-co
+brew tap moonaries90/nonet https://github.com/moonaries90/nonet-releases.git
+brew install moonaries90/nonet/nonet
 ```
 
 Or run both steps in one command:
 
 ```bash
-brew tap moonaries90/matrix-co https://github.com/moonaries90/matrix-co-releases.git && brew install moonaries90/matrix-co/matrix-co
+brew tap moonaries90/nonet https://github.com/moonaries90/nonet-releases.git && brew install moonaries90/nonet/nonet
 ```
 
 Then verify the installation:
 
 ```bash
 matrix --help
-matrixctl agent --help
+nonetctl agent --help
 ```
 
-The package includes the Matrix Co launcher, daemon, TUI, control CLI, adapters, and the Node workers used by supported SDK transports. Node.js 18 or later is needed only for the Claude SDK and experimental Cursor SDK transports. Third-party agent CLIs such as Codex, Claude Code, Cursor, Kimi, and ZCode are not included and must be installed and authenticated separately.
+The package includes the Nonet launcher, daemon, TUI, control CLI, adapters, and the Node workers used by supported SDK transports. Node.js 18 or later is needed only for the Claude SDK and experimental Cursor SDK transports. Third-party agent CLIs such as Codex, Claude Code, Cursor, Kimi, and ZCode are not included and must be installed and authenticated separately.
 
 ## Upgrade or uninstall
 
 ```bash
 brew update
-brew upgrade matrix-co
+brew upgrade nonet
 ```
 
 ```bash
-brew uninstall matrix-co
-brew untap moonaries90/matrix-co
+brew uninstall nonet
+brew untap moonaries90/nonet
 ```
 
 ## Maintainer release flow
@@ -62,14 +62,14 @@ Build the TUI from this repository:
 scripts/package-tui-release.sh 0.0.2
 ```
 
-The script rebuilds the package from the sibling `matrix-co` source checkout by default, validates the required runtime files and architecture, and writes a versioned archive plus `SHA256SUMS` under `dist/tui-v<version>/`.
+The script rebuilds the package from the sibling `nonet` source checkout by default, validates the required runtime files and architecture, and writes a versioned archive plus `SHA256SUMS` under `dist/tui-v<version>/`.
 
 Commit and push the release files, then publish the generated archive and `SHA256SUMS` under the matching `tui-v<version>` GitHub Release. Verify the public Formula URL, checksum, and installed command smoke before announcing the release.
 
-Build the Desktop app from the sibling `matrix-co` source checkout:
+Build the Desktop app from the sibling `nonet` source checkout:
 
 ```bash
-cd ../matrix-co
+cd ../nonet
 bash scripts/package-desktop.sh
 ```
 
@@ -83,8 +83,8 @@ the release.
 
 ```bash
 gh workflow run release-desktop.yml \
-  --repo moonaries90/matrix-co-releases \
-  -f source_ref=<full-matrix-co-commit-sha>
+  --repo moonaries90/nonet-releases \
+  -f source_ref=<full-nonet-commit-sha>
 ```
 
 The older platform-specific build workflows remain available for package
@@ -93,7 +93,7 @@ diagnostics; they are not the normal release path.
 ### Windows CI package
 
 Run the **Build Windows desktop** workflow manually and provide a branch, tag,
-or commit SHA from the private `moonaries90/matrix-co` repository. The workflow
+or commit SHA from the private `moonaries90/nonet` repository. The workflow
 builds the existing `scripts/package-desktop.ps1` pipeline on a pinned
 `windows-2022` runner and uploads the unsigned NSIS installer and portable
 package as a 14-day Actions artifact.

@@ -1,6 +1,6 @@
-# Matrix Co Releases Agent Guide
+# Nonet Releases Agent Guide
 
-This repository owns Matrix Co release automation, published artifacts, release
+This repository owns Nonet release automation, published artifacts, release
 notes, and the Homebrew formula. The private application source repository is a
 build input and must be treated as read-only here.
 
@@ -9,14 +9,14 @@ build input and must be treated as read-only here.
 | Change area | Read first | Verification |
 |---|---|---|
 | Desktop release | `docs/desktop-release.md`, both files in `.github/workflows/` | Build macOS and Windows from the same immutable source SHA; verify every published asset and checksum |
-| Desktop CI workflow | Relevant workflow and the packaging script under `/Users/lji/projects/github/matrix-co/scripts/` | Run the changed workflow manually with an exact source SHA |
+| Desktop CI workflow | Relevant workflow and the packaging script under `/Users/lji/projects/github/nonet/scripts/` | Run the changed workflow manually with an exact source SHA |
 | Release notes | Most recent matching file under `releases/` | Confirm version, source SHA, architecture, byte size, checksum, and signing disclosure |
-| TUI or Homebrew release | `README.md`, `scripts/package-tui-release.sh`, `Formula/matrix-co.rb` | Build the archive, verify checksums, then perform the documented install smoke test |
+| TUI or Homebrew release | `README.md`, `scripts/package-tui-release.sh`, `Formula/nonet.rb` | Build the archive, verify checksums, then perform the documented install smoke test |
 | Website download links | `/Users/lji/projects/k8s/matrix-site/AGENTS.md`, `docs/desktop-release.md` | Update only after the GitHub Release is public and its assets return HTTP 200 |
 
 ## Release invariants
 
-- Use one immutable `matrix-co` commit SHA for every platform in a Desktop
+- Use one immutable `nonet` commit SHA for every platform in a Desktop
   release. Never mix branch heads or artifacts from different source commits.
 - Normal Desktop releases are built by GitHub Actions. A maintainer does not
   need to package on a local Mac or Windows machine unless CI itself is being
@@ -33,7 +33,7 @@ build input and must be treated as read-only here.
 
 ## Repository boundaries
 
-- Do not modify `/Users/lji/projects/github/matrix-co` from this repository.
+- Do not modify `/Users/lji/projects/github/nonet` from this repository.
 - Do not place downloaded build artifacts in Git. Use a temporary directory.
 - Do not overwrite or delete an existing public release without explicit user
   approval. Correct a bad release with a new tag unless directed otherwise.

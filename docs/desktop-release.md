@@ -1,6 +1,6 @@
 # Desktop Release Runbook
 
-Use this runbook to publish one Matrix Co Desktop release for Apple Silicon
+Use this runbook to publish one Nonet Desktop release for Apple Silicon
 macOS and x64 Windows, then update the product website.
 
 ## 1. Select one source commit
@@ -8,10 +8,10 @@ macOS and x64 Windows, then update the product website.
 The source repository is private and is read-only during this process.
 
 ```bash
-git -C /Users/lji/projects/github/matrix-co fetch origin
-git -C /Users/lji/projects/github/matrix-co status --short --branch
-git -C /Users/lji/projects/github/matrix-co rev-parse HEAD
-git -C /Users/lji/projects/github/matrix-co rev-parse origin/main
+git -C /Users/lji/projects/github/nonet fetch origin
+git -C /Users/lji/projects/github/nonet status --short --branch
+git -C /Users/lji/projects/github/nonet rev-parse HEAD
+git -C /Users/lji/projects/github/nonet rev-parse origin/main
 ```
 
 Proceed only when the intended source tree is clean and the selected commit is
@@ -24,9 +24,9 @@ because it can move between jobs.
 From this repository:
 
 ```bash
-SOURCE_SHA=<full-matrix-co-commit-sha>
+SOURCE_SHA=<full-nonet-commit-sha>
 gh workflow run release-desktop.yml \
-  --repo moonaries90/matrix-co-releases \
+  --repo moonaries90/nonet-releases \
   -f source_ref="$SOURCE_SHA"
 ```
 
@@ -36,7 +36,7 @@ without publishing, provide a unique test tag and keep the result as a draft:
 
 ```bash
 gh workflow run release-desktop.yml \
-  --repo moonaries90/matrix-co-releases \
+  --repo moonaries90/nonet-releases \
   -f source_ref="$SOURCE_SHA" \
   -f release_tag="desktop-ci-test-$(date -u +%Y%m%d%H%M%S)" \
   -f publish_release=false
@@ -56,9 +56,9 @@ private source is read through the read-only `MATRIX_CO_SOURCE_DEPLOY_KEY`.
 Find and watch the dispatched run:
 
 ```bash
-gh run list --repo moonaries90/matrix-co-releases \
+gh run list --repo moonaries90/nonet-releases \
   --workflow release-desktop.yml --limit 3
-gh run watch <run-id> --repo moonaries90/matrix-co-releases --exit-status
+gh run watch <run-id> --repo moonaries90/nonet-releases --exit-status
 ```
 
 The run itself verifies:
@@ -88,7 +88,7 @@ asset sizes match the local files:
 
 ```bash
 gh release view desktop-YYYY.MM.DD \
-  --repo moonaries90/matrix-co-releases \
+  --repo moonaries90/nonet-releases \
   --json url,isDraft,isPrerelease,targetCommitish,assets
 ```
 

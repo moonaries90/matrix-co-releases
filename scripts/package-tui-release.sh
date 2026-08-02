@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 VERSION="${1:-0.0.1}"
-SOURCE_ROOT="${MATRIX_CO_SOURCE_ROOT:-"$(cd "$ROOT/../matrix-co" && pwd -P)"}"
+SOURCE_ROOT="${NONET_CO_SOURCE_ROOT:-"$(cd "$ROOT/../nonet" && pwd -P)"}"
 OUT_DIR="${2:-"$ROOT/dist/tui-v$VERSION"}"
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
@@ -25,16 +25,16 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 2
 fi
 
-PACKAGE_DIR="$OUT_DIR/matrix-co"
-ASSET_NAME="matrix-co-tui-$VERSION-darwin-$ARCH.tar.gz"
+PACKAGE_DIR="$OUT_DIR/nonet"
+ASSET_NAME="nonet-tui-$VERSION-darwin-$ARCH.tar.gz"
 ASSET_PATH="$OUT_DIR/$ASSET_NAME"
 
 if [[ ! -x "$SOURCE_ROOT/scripts/package-local.sh" ]]; then
-  echo "missing Matrix Co package entrypoint: $SOURCE_ROOT/scripts/package-local.sh" >&2
+  echo "missing Nonet package entrypoint: $SOURCE_ROOT/scripts/package-local.sh" >&2
   exit 1
 fi
 
-echo "==> rebuilding Matrix Co TUI package from $SOURCE_ROOT"
+echo "==> rebuilding Nonet TUI package from $SOURCE_ROOT"
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 (
@@ -44,12 +44,11 @@ mkdir -p "$OUT_DIR"
 
 required_files=(
   README.md
-  bin/matrix
-  bin/matrixctl
-  bin/matrix-co-tui
-  bin/matrixd
-  bin/matrix-tui
-  bin/matrix-mcp
+  bin/nonet
+  bin/nonetctl
+  bin/nonetd
+  bin/nonet-tui
+  bin/nonet-mcp
   bin/codex-agent
   bin/claude-agent
   bin/cursor-agent
@@ -101,7 +100,7 @@ printf '%s\n' "$VERSION" >"$PACKAGE_DIR/VERSION"
 rm -rf "$PACKAGE_DIR/logs"
 
 echo "==> creating $ASSET_NAME"
-COPYFILE_DISABLE=1 tar -czf "$ASSET_PATH" -C "$OUT_DIR" matrix-co
+COPYFILE_DISABLE=1 tar -czf "$ASSET_PATH" -C "$OUT_DIR" nonet
 (
   cd "$OUT_DIR"
   shasum -a 256 "$ASSET_NAME" >SHA256SUMS
