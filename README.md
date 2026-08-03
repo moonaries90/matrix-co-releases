@@ -1,11 +1,50 @@
 # Nonet Releases
 
-This repository publishes verified Nonet Desktop and TUI release artifacts, plus the Homebrew formula for the macOS TUI distribution.
+This repository is the public release channel for **Nonet Desktop**. The
+application source repository is private, so the artifacts published under this
+repository's GitHub Releases are the only unauthenticated download path.
+
+## What is Nonet?
+
+Nonet is a local-first group-chat workspace for multiple AI coding agents:
+you create rooms on your own machine and spawn several agents — Claude Code,
+Codex, Cursor, Kimi, ZCode — into the same conversation. The Desktop app is the
+supported distribution and is fully self-contained: it bundles the Nonet
+daemon, every agent adapter, and the SDK workers, so there is nothing else to
+install from Nonet itself.
+
+Highlights:
+
+- **Multi-agent rooms** — chat with several coding agents in one room, with
+  host-coordinated and free chat modes, plus goal-driven auto-run chains.
+- **Approvals** — review and answer agent command/tool permission requests
+  from a dedicated approvals surface.
+- **Agent profiles and resume** — save reusable agent configurations and
+  resume previous sessions.
+- **Workspaces and files** — per-agent working directories, file attachments,
+  and inline file preview in the transcript.
+- **Remote connections** — attach to a remote machine over SSH.
+- **In-app updates** — the app checks this repository's signed update feed
+  (`latest.json` + `latest.json.sig`) and offers new releases.
+
+Third-party agent CLIs (Codex, Claude Code, Cursor, Kimi, ZCode) are **not**
+included; install and authenticate them separately. Node.js 18 or later is
+needed only for the Claude SDK and experimental Cursor SDK transports.
 
 ## Download the Desktop app
 
-Download the latest Apple Silicon macOS DMG or Windows x64 installer from this
-repository's GitHub Releases.
+Download the latest release from this repository's GitHub Releases page. Each
+release ships:
+
+| Asset | Purpose |
+|---|---|
+| `Nonet-macos-arm64.dmg` | macOS installer (Apple Silicon) |
+| `Nonet-windows-x64-setup.exe` | Windows installer (NSIS) |
+| `Nonet-windows-x64-portable.zip` | Windows portable package (no installer) |
+| `SHA256SUMS.txt` | SHA-256 checksums for the packages above |
+| `latest.json` / `latest.json.sig` | Signed update feed consumed by the app's in-app update check |
+
+### First launch
 
 Desktop builds do not currently use a public code-signing certificate:
 
@@ -14,39 +53,30 @@ Desktop builds do not currently use a public code-signing certificate:
 - Windows builds are unsigned, so Microsoft Defender SmartScreen may show an
   unrecognized-app warning.
 
-## Install the TUI with Homebrew
-
-Nonet TUI currently supports Apple Silicon Macs running macOS 11 or later.
+### Verify a download
 
 ```bash
-brew tap moonaries90/nonet https://github.com/moonaries90/nonet-releases.git
-brew install moonaries90/nonet/nonet
+# macOS
+shasum -a 256 -c SHA256SUMS.txt --ignore-missing
 ```
 
-Or run both steps in one command:
-
-```bash
-brew tap moonaries90/nonet https://github.com/moonaries90/nonet-releases.git && brew install moonaries90/nonet/nonet
+```powershell
+# Windows
+certutil -hashfile Nonet-windows-x64-setup.exe SHA256
+# compare against the matching line in SHA256SUMS.txt
 ```
 
-Then verify the installation:
+## Homebrew TUI (discontinued)
+
+Earlier versions of Nonet (under the previous `matrix-co` name) shipped a
+terminal UI via Homebrew. That distribution is no longer published: the
+`tui-v0.0.3` archive has been removed and the formula in `Formula/` is retained
+for history only. The Desktop app above is the supported distribution.
+
+If you still have the old tap installed, clean it up with:
 
 ```bash
-matrix --help
-nonetctl agent --help
-```
-
-The package includes the Nonet launcher, daemon, TUI, control CLI, adapters, and the Node workers used by supported SDK transports. Node.js 18 or later is needed only for the Claude SDK and experimental Cursor SDK transports. Third-party agent CLIs such as Codex, Claude Code, Cursor, Kimi, and ZCode are not included and must be installed and authenticated separately.
-
-## Upgrade or uninstall
-
-```bash
-brew update
-brew upgrade nonet
-```
-
-```bash
-brew uninstall nonet
+brew uninstall nonet 2>/dev/null || brew uninstall matrix-co 2>/dev/null
 brew untap moonaries90/nonet
 ```
 
@@ -55,23 +85,6 @@ brew untap moonaries90/nonet
 For the complete cross-platform Desktop procedure, including exact-SHA CI
 builds, artifact verification, GitHub Release publication, and website updates,
 see [`docs/desktop-release.md`](docs/desktop-release.md).
-
-Build the TUI from this repository:
-
-```bash
-scripts/package-tui-release.sh 0.0.2
-```
-
-The script rebuilds the package from the sibling `nonet` source checkout by default, validates the required runtime files and architecture, and writes a versioned archive plus `SHA256SUMS` under `dist/tui-v<version>/`.
-
-Commit and push the release files, then publish the generated archive and `SHA256SUMS` under the matching `tui-v<version>` GitHub Release. Verify the public Formula URL, checksum, and installed command smoke before announcing the release.
-
-Build the Desktop app from the sibling `nonet` source checkout:
-
-```bash
-cd ../nonet
-bash scripts/package-desktop.sh
-```
 
 For a normal release, run the **Release dual-platform desktop** workflow once
 with an immutable source commit. It exports both native runtime closures,
@@ -110,3 +123,9 @@ Windows. It packages the existing `scripts/package-desktop.sh` pipeline on an
 Apple Silicon runner, verifies the app's ad-hoc signature and architecture,
 validates the DMG, and uploads the DMG plus its SHA-256 checksum as a 14-day
 Actions artifact.
+
+### Legacy TUI packaging
+
+`scripts/package-tui-release.sh` and `Formula/` remain from the discontinued
+Homebrew TUI channel. They are not part of the current release path; do not
+publish new TUI archives without an explicit decision to revive that channel.
