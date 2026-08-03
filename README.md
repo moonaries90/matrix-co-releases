@@ -66,12 +66,13 @@ certutil -hashfile Nonet-windows-x64-setup.exe SHA256
 # compare against the matching line in SHA256SUMS.txt
 ```
 
-## Homebrew TUI (discontinued)
+## Homebrew TUI (retired)
 
 Earlier versions of Nonet (under the previous `matrix-co` name) shipped a
-terminal UI via Homebrew. That distribution is no longer published: the
-`tui-v0.0.3` archive has been removed and the formula in `Formula/` is retained
-for history only. The Desktop app above is the supported distribution.
+terminal UI via Homebrew. That channel is retired: the release archives,
+formula, and packaging script have all been removed, and no new TUI builds are
+published here. The Desktop app above is the only supported distribution.
+Historical TUI release notes remain under [`releases/`](releases/) as archive.
 
 If you still have the old tap installed, clean it up with:
 
@@ -123,9 +124,3 @@ Windows. It packages the existing `scripts/package-desktop.sh` pipeline on an
 Apple Silicon runner, verifies the app's ad-hoc signature and architecture,
 validates the DMG, and uploads the DMG plus its SHA-256 checksum as a 14-day
 Actions artifact.
-
-### Legacy TUI packaging
-
-`scripts/package-tui-release.sh` and `Formula/` remain from the discontinued
-Homebrew TUI channel. They are not part of the current release path; do not
-publish new TUI archives without an explicit decision to revive that channel.

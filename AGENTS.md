@@ -1,8 +1,13 @@
 # Nonet Releases Agent Guide
 
-This repository owns Nonet release automation, published artifacts, release
-notes, and the Homebrew formula. The private application source repository is a
-build input and must be treated as read-only here.
+This repository owns Nonet Desktop release automation, published artifacts,
+and release notes. The private application source repository is a build input
+and must be treated as read-only here.
+
+The Homebrew TUI channel is retired (2026-08-03): the formula and TUI
+packaging script have been removed, and no new TUI archives are published. The
+TUI is built from source locally by the maintainer for personal headless use.
+Historical TUI release notes remain under `releases/` as archive only.
 
 ## Scope routing
 
@@ -11,7 +16,6 @@ build input and must be treated as read-only here.
 | Desktop release | `docs/desktop-release.md`, both files in `.github/workflows/` | Build macOS and Windows from the same immutable source SHA; verify every published asset and checksum |
 | Desktop CI workflow | Relevant workflow and the packaging script under `/Users/lji/projects/github/nonet/scripts/` | Run the changed workflow manually with an exact source SHA |
 | Release notes | Most recent matching file under `releases/` | Confirm version, source SHA, architecture, byte size, checksum, and signing disclosure |
-| TUI or Homebrew release | `README.md`, `scripts/package-tui-release.sh`, `Formula/nonet.rb` | Build the archive, verify checksums, then perform the documented install smoke test |
 | Website download links | `/Users/lji/projects/k8s/matrix-site/AGENTS.md`, `docs/desktop-release.md` | Update only after the GitHub Release is public and its assets return HTTP 200 |
 
 ## Release invariants
