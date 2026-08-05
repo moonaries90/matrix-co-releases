@@ -372,6 +372,7 @@ jobs:
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain"
           security import "$p12" -k "$keychain" \
             -P "$NONET_MACOS_SIGNING_CERT_PASSWORD" -A -T /usr/bin/codesign >/dev/null
           unset NONET_MACOS_SIGNING_CERT_P12_B64 NONET_MACOS_SIGNING_CERT_PASSWORD
