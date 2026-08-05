@@ -143,15 +143,16 @@ jobs:
         shell: bash
         working-directory: nonet
         env:
+          NONET_CO_HOME: ${{ runner.temp }}/nonet-home
           NONET_DESKTOP_REQUIRE_SIGNED_APP: "1"
-        run: ./scripts/package-desktop.sh
+        run: bash scripts/package-desktop-local.sh
 
       - name: Verify app, DMG, architecture, and checksums
         shell: bash
         working-directory: nonet
         run: |
           set -euo pipefail
-          dist="dist/nonet-desktop"
+          dist="dist/nonet-desktop-local"
           app="$dist/Nonet.app"
           dmg="$dist/Nonet.dmg"
           test -d "$app"
@@ -171,8 +172,8 @@ jobs:
         with:
           name: nonet-desktop-macos-${{ github.run_number }}
           path: |
-            nonet/dist/nonet-desktop/Nonet.dmg
-            nonet/dist/nonet-desktop/SHA256SUMS-macos
+            nonet/dist/nonet-desktop-local/Nonet.dmg
+            nonet/dist/nonet-desktop-local/SHA256SUMS-macos
           if-no-files-found: error
           retention-days: 14
 
