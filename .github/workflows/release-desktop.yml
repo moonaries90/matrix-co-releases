@@ -1037,6 +1037,7 @@ jobs:
           } > "$RUNNER_TEMP/release-notes.md"
 
       - name: Create draft release
+        if: ${{ inputs.publish_release }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1056,6 +1057,7 @@ jobs:
             --notes-file "$RUNNER_TEMP/release-notes.md"
 
       - name: Upload all six release assets
+        if: ${{ inputs.publish_release }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1073,6 +1075,7 @@ jobs:
             "$assets/latest.json.sig"
 
       - name: Verify complete draft asset set
+        if: ${{ inputs.publish_release }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1130,6 +1133,7 @@ jobs:
           gh release edit "$RELEASE_TAG" --draft=false
 
       - name: Record release evidence
+        if: ${{ inputs.publish_release }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
