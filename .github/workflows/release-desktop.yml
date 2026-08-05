@@ -386,7 +386,7 @@ jobs:
             exit 1
           }
           {
-            echo "APPLE_SIGNING_IDENTITY=$certificate_sha1"
+            echo "APPLE_SIGNING_IDENTITY=Nonet Desktop Stable Self-Signed"
             echo "APPLE_SIGNING_KEYCHAIN=$keychain"
             echo "NONET_MACOS_SIGNING_CERT_SHA1=$certificate_sha1"
           } >> "$GITHUB_ENV"
