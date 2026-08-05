@@ -30,6 +30,16 @@ gh workflow run release-desktop.yml \
   -f source_ref="$SOURCE_SHA"
 ```
 
+Policy requires `SOURCE_SHA` to be the reviewed full SHA merged into
+`moonaries90/nonet` `main`. Before production signing, the owner records that
+exact SHA in the protected Environment's
+`NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA` variable and separately approves the
+deployment. Automation fails closed unless the requested SHA, checked-out HEAD,
+and reviewed variable are identical; it also requires an authenticated local
+`origin/*` ref and a real merge base with `origin/main`. The Environment's
+main-only deployment policy protects the `nonet-releases` workflow ref and does
+not itself prove source-repository main ancestry.
+
 The default tag is `desktop-YYYY.MM.DD`, and successful runs publish only after
 the complete six-asset draft has been verified. To exercise the full build
 without publishing, provide a unique test tag and keep the result as a draft:
@@ -41,6 +51,9 @@ gh workflow run release-desktop.yml \
   -f release_tag="desktop-ci-test-$(date -u +%Y%m%d%H%M%S)" \
   -f publish_release=false
 ```
+
+When `publish_release=false`, the workflow does not create even a draft GitHub
+Release; build evidence remains in Actions artifacts only.
 
 The workflow runs the native exports in parallel, then assembles one signed
 catalog only after both artifacts exist. Both package jobs consume that exact
@@ -65,6 +78,13 @@ The run itself verifies:
 
 - macOS DMG passes `hdiutil verify`.
 - The mounted app passes `codesign --verify --deep --strict`.
+- The copied and DMG-mounted macOS apps have identifier `co.nonet.desktop`,
+  hardened-runtime/non-ad-hoc flags, the reviewed SHA-1 leaf and SHA-256
+  certificate pin, identical normalized designated requirements, and valid
+  deep/strict signatures.
+- Every nested Mach-O executable, bridge, agent, support binary, framework, and
+  dylib present in the app is explicitly signed with the intended leaf before
+  the outer app is signed.
 - The main macOS executable reports `arm64`.
 - Windows contains exactly one NSIS installer and a complete `portable/`
   directory.
@@ -116,10 +136,20 @@ HTML contains both new release URLs and that each download resolves publicly.
 
 The current expected state is:
 
-- macOS: ad-hoc signed, not Developer ID signed, not notarized.
+- macOS: signed with one stable Nonet self-signed identity, not Developer ID
+  signed, and not notarized. The P12 and its password are Environment secrets
+  `NONET_MACOS_SIGNING_P12_B64` and
+  `NONET_MACOS_SIGNING_P12_PASSWORD`. Only the protected production packaging
+  job imports them into an ephemeral keychain. The reviewed public SHA-256 pin
+  is checked into the workflow; the SHA-1 leaf is recorded alongside it for
+  SecRequirement evidence. The general macOS build workflow is deliberately
+  ad-hoc and non-publishable.
 - Windows: unsigned; SmartScreen may warn.
 
-This is sufficient for packaging and publication but not for a warning-free
-installation experience. Introducing Developer ID/notarization or Windows code
-signing is a separate security-sensitive change and must update both workflows,
-verification, release notes, and website disclosures together.
+The first release that switches from ad-hoc signing requires users to grant
+their macOS privacy permissions one final time. Later builds signed with the
+same identity retain the same designated requirement. This is sufficient for
+stable TCC identity, but not for a warning-free installation experience.
+Introducing Developer ID/notarization or Windows code signing is a separate
+security-sensitive change and must update workflows, verification, release
+notes, and website disclosures together.

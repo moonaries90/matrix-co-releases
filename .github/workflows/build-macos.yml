@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   package:
-    name: Package ad-hoc signed macOS desktop
+    name: Package non-publishable ad-hoc macOS desktop
     runs-on: macos-15
     timeout-minutes: 90
 
@@ -73,21 +73,26 @@ jobs:
       - name: Build macOS app and DMG
         shell: bash
         working-directory: nonet
-        run: ./scripts/package-desktop.sh
+        env:
+          NONET_CO_HOME: ${{ runner.temp }}/nonet-home
+        run: bash scripts/package-desktop-local.sh
 
-      - name: Verify app, DMG, architecture, and checksums
+      - name: Verify non-publishable app, DMG, architecture, and checksums
         shell: bash
         working-directory: nonet
         run: |
           set -euo pipefail
-          dist="dist/nonet-desktop"
+          dist="dist/nonet-desktop-local"
           app="$dist/Nonet.app"
           dmg="$dist/Nonet.dmg"
           test -d "$app"
           test -f "$dmg"
           test -x "$app/Contents/MacOS/nonet-desktop"
           test -x "$app/Contents/MacOS/nonetd"
-          codesign --verify --deep --strict --verbose=2 "$app"
+          details="$(codesign -d --verbose=4 "$app" 2>&1)"
+          grep -Eq '(^Signature=adhoc$|flags=.*\(adhoc\))' <<<"$details"
+          codesign -dv --verbose=4 "$app"
+          codesign -dr - "$app"
           hdiutil verify "$dmg"
           file "$app/Contents/MacOS/nonet-desktop" | grep -q "arm64"
           shasum -a 256 "$dmg" > "$dist/SHA256SUMS-macos"
@@ -95,9 +100,9 @@ jobs:
       - name: Upload macOS package
         uses: actions/upload-artifact@v6
         with:
-          name: nonet-desktop-macos-${{ github.run_number }}
+          name: nonpublishable-adhoc-nonet-desktop-macos-${{ github.run_number }}
           path: |
-            nonet/dist/nonet-desktop/Nonet.dmg
-            nonet/dist/nonet-desktop/SHA256SUMS-macos
+            nonet/dist/nonet-desktop-local/Nonet.dmg
+            nonet/dist/nonet-desktop-local/SHA256SUMS-macos
           if-no-files-found: error
           retention-days: 14
