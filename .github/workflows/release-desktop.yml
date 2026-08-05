@@ -64,6 +64,8 @@ jobs:
 
       - name: Exercise synthetic signing setup, failures, and cleanup
         shell: bash
+        env:
+          NONET_TEST_CI_SYNTHETIC_KEYCHAIN_ONLY: "1"
         run: bash scripts/package-desktop-signing.test.sh
 
   export-mac:

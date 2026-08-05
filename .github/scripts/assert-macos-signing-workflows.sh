@@ -40,6 +40,8 @@ active_contract_step="$(sed -n \
 
 grep -Fq 'package-desktop-signing.test.sh' <<<"$regression_job" \
   || fail "synthetic keychain regression suite is not isolated in its prerequisite job"
+grep -Fq 'NONET_TEST_CI_SYNTHETIC_KEYCHAIN_ONLY: "1"' <<<"$regression_job" \
+  || fail "hosted-runner synthetic identity mode is not confined to the regression job"
 if grep -Eq 'environment: production-signing|NONET_MACOS_SIGNING_(P12_B64|P12_PASSWORD)|production-macos-signing.sh setup' \
   <<<"$regression_job"; then
   fail "synthetic keychain regression job can access or mutate production signing state"
@@ -50,6 +52,9 @@ grep -Fq 'verify-active-macos-signing-identity.sh' <<<"$active_contract_step" \
   || fail "production signing contract does not use the active-identity verifier"
 if grep -Fq 'package-desktop-signing.test.sh' <<<"$production_job"; then
   fail "production signing job runs the destructive synthetic keychain suite"
+fi
+if grep -Fq 'NONET_TEST_CI_SYNTHETIC_KEYCHAIN_ONLY' <<<"$production_job"; then
+  fail "production signing job enables the synthetic CN selector"
 fi
 
 echo "assert-macos-signing-workflows: passed"
