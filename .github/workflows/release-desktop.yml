@@ -369,6 +369,8 @@ jobs:
       - name: Verify stable signing contract
         shell: bash
         working-directory: nonet
+        env:
+          NONET_TEST_USE_EXISTING_MACOS_SIGNING_IDENTITY: "1"
         run: bash scripts/package-desktop-signing.test.sh
 
       - name: Package macOS desktop
