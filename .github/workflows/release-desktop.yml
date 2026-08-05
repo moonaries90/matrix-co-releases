@@ -43,7 +43,10 @@ jobs:
 
       - name: Assert publishing workflows fail closed
         shell: bash
-        run: bash .github/scripts/assert-macos-signing-workflows.sh
+        run: |
+          set -euo pipefail
+          bash .github/scripts/assert-macos-signing-workflows.sh
+          bash .github/scripts/production-macos-signing.test.sh
 
   export-mac:
     name: Export macOS runtime artifact
