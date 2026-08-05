@@ -48,6 +48,24 @@ jobs:
           bash .github/scripts/assert-macos-signing-workflows.sh
           bash .github/scripts/production-macos-signing.test.sh
 
+  macos-signing-regression:
+    name: Exercise isolated synthetic macOS signing regression suite
+    runs-on: macos-15
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out private Nonet source
+        uses: actions/checkout@v6
+        with:
+          repository: moonaries90/nonet
+          ref: ${{ inputs.source_ref }}
+          ssh-key: ${{ secrets.MATRIX_CO_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+
+      - name: Exercise synthetic signing setup, failures, and cleanup
+        shell: bash
+        run: bash scripts/package-desktop-signing.test.sh
+
   export-mac:
     name: Export macOS runtime artifact
     runs-on: macos-15
@@ -301,7 +319,7 @@ jobs:
 
   package-mac:
     name: Package macOS desktop from signed catalog
-    needs: [assemble, signing-workflow-contract]
+    needs: [assemble, signing-workflow-contract, macos-signing-regression]
     runs-on: macos-15
     timeout-minutes: 90
     environment: production-signing
@@ -369,12 +387,10 @@ jobs:
           set -euo pipefail
           bash release-automation/.github/scripts/production-macos-signing.sh setup
 
-      - name: Verify stable signing contract
+      - name: Verify active stable signing identity without keychain mutation
         shell: bash
         working-directory: nonet
-        env:
-          NONET_TEST_USE_EXISTING_MACOS_SIGNING_IDENTITY: "1"
-        run: bash scripts/package-desktop-signing.test.sh
+        run: bash scripts/verify-active-macos-signing-identity.sh
 
       - name: Package macOS desktop
         shell: bash
