@@ -65,6 +65,8 @@ The run itself verifies:
 
 - macOS DMG passes `hdiutil verify`.
 - The mounted app passes `codesign --verify --deep --strict`.
+- The macOS app is not ad-hoc signed; its designated requirement is bound to
+  the SHA-1 fingerprint resolved from `NONET_MACOS_SIGNING_CERT_P12_B64`.
 - The main macOS executable reports `arm64`.
 - Windows contains exactly one NSIS installer and a complete `portable/`
   directory.
@@ -116,10 +118,18 @@ HTML contains both new release URLs and that each download resolves publicly.
 
 The current expected state is:
 
-- macOS: ad-hoc signed, not Developer ID signed, not notarized.
+- macOS: signed with one stable Nonet self-signed identity, not Developer ID
+  signed, and not notarized. The P12 and its password are stored only in
+  `NONET_MACOS_SIGNING_CERT_P12_B64` and
+  `NONET_MACOS_SIGNING_CERT_PASSWORD`; each macOS packaging job imports them
+  into an ephemeral keychain and requires the final app to remain
+  certificate-bound.
 - Windows: unsigned; SmartScreen may warn.
 
-This is sufficient for packaging and publication but not for a warning-free
-installation experience. Introducing Developer ID/notarization or Windows code
-signing is a separate security-sensitive change and must update both workflows,
-verification, release notes, and website disclosures together.
+The first release that switches from ad-hoc signing requires users to grant
+their macOS privacy permissions one final time. Later builds signed with the
+same identity retain the same designated requirement. This is sufficient for
+stable TCC identity, but not for a warning-free installation experience.
+Introducing Developer ID/notarization or Windows code signing is a separate
+security-sensitive change and must update workflows, verification, release
+notes, and website disclosures together.

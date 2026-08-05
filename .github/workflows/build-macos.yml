@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   package:
-    name: Package ad-hoc signed macOS desktop
+    name: Package stable self-signed macOS desktop
     runs-on: macos-15
     timeout-minutes: 90
 
@@ -70,9 +70,79 @@ jobs:
           node --version
           npm --version
 
+      - name: Import stable macOS signing identity
+        shell: bash
+        env:
+          NONET_MACOS_SIGNING_CERT_P12_B64: ${{ secrets.NONET_MACOS_SIGNING_CERT_P12_B64 }}
+          NONET_MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.NONET_MACOS_SIGNING_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ -n "$NONET_MACOS_SIGNING_CERT_P12_B64" ]] || {
+            echo "NONET_MACOS_SIGNING_CERT_P12_B64 is required" >&2
+            exit 1
+          }
+          [[ -n "$NONET_MACOS_SIGNING_CERT_PASSWORD" ]] || {
+            echo "NONET_MACOS_SIGNING_CERT_PASSWORD is required" >&2
+            exit 1
+          }
+
+          keychain="$RUNNER_TEMP/nonet-desktop-signing.keychain-db"
+          p12="$RUNNER_TEMP/nonet-desktop-signing.p12"
+          certificate="$RUNNER_TEMP/nonet-desktop-signing.pem"
+          keychain_password="$(openssl rand -hex 32)"
+          trap 'rm -f "$p12" "$certificate"' EXIT
+
+          printf '%s' "$NONET_MACOS_SIGNING_CERT_P12_B64" | base64 --decode > "$p12"
+          P12_PASSWORD="$NONET_MACOS_SIGNING_CERT_PASSWORD" \
+            openssl pkcs12 -legacy -in "$p12" -clcerts -nokeys \
+              -passin env:P12_PASSWORD -out "$certificate" >/dev/null 2>&1 \
+            || P12_PASSWORD="$NONET_MACOS_SIGNING_CERT_PASSWORD" \
+              openssl pkcs12 -in "$p12" -clcerts -nokeys \
+                -passin env:P12_PASSWORD -out "$certificate" >/dev/null 2>&1
+          certificate_sha1="$(openssl x509 -in "$certificate" -noout \
+            -fingerprint -sha1 | sed 's/^.*=//; s/://g')"
+          [[ "$certificate_sha1" =~ ^[[:xdigit:]]{40}$ ]]
+          [[ "$(openssl x509 -in "$certificate" -noout -subject -nameopt RFC2253)" \
+            == "subject=CN=Nonet Desktop Stable Self-Signed" ]]
+          openssl x509 -in "$certificate" -noout -checkend 15552000
+          openssl x509 -in "$certificate" -noout -text | grep -q 'CA:TRUE'
+          openssl x509 -in "$certificate" -noout -text | grep -q 'Code Signing'
+
+          sudo security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$p12" -k "$keychain" \
+            -P "$NONET_MACOS_SIGNING_CERT_PASSWORD" -A -T /usr/bin/codesign >/dev/null
+          unset NONET_MACOS_SIGNING_CERT_P12_B64 NONET_MACOS_SIGNING_CERT_PASSWORD
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$keychain_password" "$keychain" >/dev/null
+
+          identity_count="$(security find-identity -v -p codesigning "$keychain" |
+            awk -v expected="$certificate_sha1" \
+              '/^[[:space:]]*[0-9]+\)/ && $2 == expected { count++ } END { print count + 0 }')"
+          [[ "$identity_count" == "1" ]] || {
+            echo "stable macOS signing certificate did not resolve to exactly one valid identity" >&2
+            exit 1
+          }
+          {
+            echo "APPLE_SIGNING_IDENTITY=$certificate_sha1"
+            echo "APPLE_SIGNING_KEYCHAIN=$keychain"
+            echo "NONET_MACOS_SIGNING_CERT_SHA1=$certificate_sha1"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify stable signing contract
+        shell: bash
+        working-directory: nonet
+        run: bash scripts/package-desktop-signing.test.sh
+
       - name: Build macOS app and DMG
         shell: bash
         working-directory: nonet
+        env:
+          NONET_DESKTOP_REQUIRE_SIGNED_APP: "1"
         run: ./scripts/package-desktop.sh
 
       - name: Verify app, DMG, architecture, and checksums
@@ -87,7 +157,10 @@ jobs:
           test -f "$dmg"
           test -x "$app/Contents/MacOS/nonet-desktop"
           test -x "$app/Contents/MacOS/nonetd"
-          codesign --verify --deep --strict --verbose=2 "$app"
+          ./scripts/assert-desktop-signature.sh \
+            "$app" "$NONET_MACOS_SIGNING_CERT_SHA1"
+          codesign -dv --verbose=4 "$app"
+          codesign -dr - "$app"
           hdiutil verify "$dmg"
           file "$app/Contents/MacOS/nonet-desktop" | grep -q "arm64"
           shasum -a 256 "$dmg" > "$dist/SHA256SUMS-macos"
@@ -101,3 +174,16 @@ jobs:
             nonet/dist/nonet-desktop/SHA256SUMS-macos
           if-no-files-found: error
           retention-days: 14
+
+      - name: Remove ephemeral signing identity
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [[ -n "${NONET_MACOS_SIGNING_CERT_SHA1:-}" ]]; then
+            sudo security delete-certificate -Z "$NONET_MACOS_SIGNING_CERT_SHA1" \
+              /Library/Keychains/System.keychain >/dev/null 2>&1
+          fi
+          if [[ -n "${APPLE_SIGNING_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$APPLE_SIGNING_KEYCHAIN" >/dev/null 2>&1
+          fi

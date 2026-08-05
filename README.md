@@ -48,8 +48,11 @@ release ships:
 
 Desktop builds do not currently use a public code-signing certificate:
 
-- macOS builds are ad-hoc signed but not Developer ID signed or notarized, so
-  macOS may require right-clicking the app and choosing **Open** on first launch.
+- macOS builds use one stable Nonet self-signed identity, but are not Developer
+  ID signed or notarized, so macOS may require right-clicking the app and
+  choosing **Open** on first launch. When updating from an older ad-hoc-signed
+  build, macOS requires one final privacy-permission reauthorization after the
+  identity switch; later builds retain the same designated requirement.
 - Windows builds are unsigned, so Microsoft Defender SmartScreen may show an
   unrecognized-app warning.
 
@@ -121,6 +124,7 @@ artifact has been verified.
 
 Run the **Build macOS desktop** workflow with the same source commit used for
 Windows. It packages the existing `scripts/package-desktop.sh` pipeline on an
-Apple Silicon runner, verifies the app's ad-hoc signature and architecture,
+Apple Silicon runner, imports the stable self-signed identity into an ephemeral
+keychain, verifies the app's certificate-bound signature and architecture,
 validates the DMG, and uploads the DMG plus its SHA-256 checksum as a 14-day
 Actions artifact.
