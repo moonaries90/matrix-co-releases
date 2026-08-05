@@ -415,12 +415,13 @@ jobs:
           set -euo pipefail
           app="$PACKAGE_OUT/Nonet.app"
           dmg="$PACKAGE_OUT/Nonet.dmg"
+          signing_evidence="$PACKAGE_OUT/signing-evidence-macos.txt"
           embedded="$app/Contents/Resources/nonet-runtime-catalog"
           test -d "$app"
           test -f "$dmg"
           ./scripts/verify-macos-desktop-package.sh "$PACKAGE_OUT" \
             "$NONET_MACOS_SIGNING_CERT_SHA1" \
-            "$NONET_MACOS_SIGNING_CERT_SHA256"
+            "$NONET_MACOS_SIGNING_CERT_SHA256" | tee "$signing_evidence"
           codesign -dv --verbose=4 "$app"
           codesign -dr - "$app"
           hdiutil verify "$dmg"
@@ -428,11 +429,13 @@ jobs:
           cmp "$RELEASE_DIR/nonet-runtime-catalog/catalog.json" "$embedded/catalog.json"
           cmp "$RELEASE_DIR/nonet-runtime-catalog/catalog.sig" "$embedded/catalog.sig"
 
-          node - "$RELEASE_DIR" "$app" "$PACKAGE_OUT/package-evidence-macos.json" <<'NODE'
+          node - "$RELEASE_DIR" "$app" "$dmg" "$signing_evidence" \
+            "$PACKAGE_OUT/package-evidence-macos.json" <<'NODE'
           const crypto = require("crypto");
           const fs = require("fs");
           const path = require("path");
-          const [releaseDir, appDir, outputPath] = process.argv.slice(2);
+          const [releaseDir, appDir, dmgPath, signingEvidencePath, outputPath] =
+            process.argv.slice(2);
           const metadata = JSON.parse(
             fs.readFileSync(path.join(releaseDir, "release-metadata.json"), "utf8")
           );
@@ -463,6 +466,39 @@ jobs:
           }
           const digest = (file) =>
             crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+          const signing = {};
+          let scope;
+          for (const line of fs.readFileSync(signingEvidencePath, "utf8").split(/\r?\n/)) {
+            if (!line) continue;
+            if (line.startsWith("scope=")) {
+              scope = line.slice("scope=".length);
+              signing[scope] = {};
+              continue;
+            }
+            const separator = line.indexOf("=");
+            if (!scope || separator < 1) {
+              throw new Error(`unexpected macOS signing evidence line: ${line}`);
+            }
+            signing[scope][line.slice(0, separator)] = line.slice(separator + 1);
+          }
+          const requiredSigningFields = [
+            "identifier",
+            "certificate_sha1",
+            "certificate_sha256",
+            "designated_requirement",
+            "cdhash",
+            "flags",
+            "nested_macho_count",
+          ];
+          for (const expectedScope of ["copied-app", "dmg-mounted-app"]) {
+            const evidence = signing[expectedScope];
+            if (!evidence) throw new Error(`missing signing evidence scope: ${expectedScope}`);
+            for (const field of requiredSigningFields) {
+              if (!evidence[field]) {
+                throw new Error(`missing ${field} in ${expectedScope} signing evidence`);
+              }
+            }
+          }
           fs.writeFileSync(
             outputPath,
             JSON.stringify({
@@ -472,7 +508,9 @@ jobs:
               releaseEpoch: metadata.releaseEpoch,
               catalogSha256: digest(catalogPath),
               catalogSignatureSha256: digest(signaturePath),
+              dmgSha256: digest(dmgPath),
               bundleId: packageId,
+              signing,
             }) + "\n"
           );
           NODE
@@ -484,6 +522,7 @@ jobs:
           path: |
             ${{ runner.temp }}/nonet-desktop-mac/Nonet.dmg
             ${{ runner.temp }}/nonet-desktop-mac/package-evidence-macos.json
+            ${{ runner.temp }}/nonet-desktop-mac/signing-evidence-macos.txt
           if-no-files-found: error
           retention-days: 7
 

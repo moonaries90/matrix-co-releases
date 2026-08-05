@@ -54,7 +54,11 @@ if grep -Fq 'package-desktop-signing.test.sh' <<<"$production_job"; then
   fail "production signing job runs the destructive synthetic keychain suite"
 fi
 if grep -Fq 'NONET_TEST_CI_SYNTHETIC_KEYCHAIN_ONLY' <<<"$production_job"; then
-  fail "production signing job enables the synthetic CN selector"
+  fail "production signing job enables the hosted synthetic lifecycle mode"
 fi
+grep -Fq 'signing-evidence-macos.txt' <<<"$production_job" \
+  || fail "production macOS job does not persist non-secret signing evidence"
+grep -Fq 'dmgSha256' <<<"$production_job" \
+  || fail "production macOS evidence does not bind the DMG digest"
 
 echo "assert-macos-signing-workflows: passed"

@@ -30,9 +30,15 @@ gh workflow run release-desktop.yml \
   -f source_ref="$SOURCE_SHA"
 ```
 
-The source SHA must be reachable from `moonaries90/nonet` `main`. The protected
-`production-signing` Environment requires approval from repository owner
-`moonaries90` before the private identity is imported.
+Policy requires `SOURCE_SHA` to be the reviewed full SHA merged into
+`moonaries90/nonet` `main`. Before production signing, the owner records that
+exact SHA in the protected Environment's
+`NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA` variable and separately approves the
+deployment. Automation fails closed unless the requested SHA, checked-out HEAD,
+and reviewed variable are identical; it also requires an authenticated local
+`origin/*` ref and a real merge base with `origin/main`. The Environment's
+main-only deployment policy protects the `nonet-releases` workflow ref and does
+not itself prove source-repository main ancestry.
 
 The default tag is `desktop-YYYY.MM.DD`, and successful runs publish only after
 the complete six-asset draft has been verified. To exercise the full build
