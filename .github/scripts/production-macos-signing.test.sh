@@ -23,6 +23,7 @@ git -C "$repo" commit -q -am review
 review_sha="$(git -C "$repo" rev-parse HEAD)"
 git -C "$repo" remote add origin git@github.com:moonaries90/nonet.git
 git -C "$repo" update-ref refs/remotes/origin/main "$main_sha"
+git -C "$repo" update-ref refs/remotes/origin/review "$review_sha"
 
 verify() {
   SOURCE_DIR="$repo" \
@@ -51,6 +52,10 @@ expect_failure approved-mismatch verify \
 git -C "$repo" update-ref -d refs/remotes/origin/main
 expect_failure missing-local-main-ref verify
 git -C "$repo" update-ref refs/remotes/origin/main "$main_sha"
+
+git -C "$repo" update-ref -d refs/remotes/origin/review
+expect_failure missing-authenticated-source-ref verify
+git -C "$repo" update-ref refs/remotes/origin/review "$review_sha"
 
 git -C "$repo" symbolic-ref HEAD refs/heads/missing-local-object
 expect_failure missing-local-head-object verify

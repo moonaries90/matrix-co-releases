@@ -19,7 +19,8 @@ verify_provenance() {
     && -z "${GIT_REPLACE_REF_BASE:-}" ]] \
     || fail "Git object or replacement overrides are forbidden"
 
-  local expected_remote actual_remote main_ref actual_sha main_sha git_path
+  local expected_remote actual_remote main_ref actual_sha main_sha merge_base git_path
+  local containing_refs
   expected_remote='git@github.com:moonaries90/nonet.git'
   actual_remote="$(git -C "$SOURCE_DIR" config --local --get remote.origin.url)" \
     || fail "source checkout has no origin URL"
@@ -51,10 +52,18 @@ verify_provenance() {
     || fail "authenticated checkout did not fetch origin/main"
   git -C "$SOURCE_DIR" cat-file -e "${main_sha}^{commit}" \
     || fail "origin/main commit object is missing"
-  git -C "$SOURCE_DIR" merge-base --is-ancestor "$main_sha" "$actual_sha" \
-    || fail "reviewed source does not descend from fetched origin/main"
+  containing_refs="$(git -C "$SOURCE_DIR" for-each-ref --contains "$actual_sha" \
+    --format='%(refname)' refs/remotes/origin | \
+    grep -v '^refs/remotes/origin/HEAD$' || true)"
+  [[ -n "$containing_refs" ]] \
+    || fail "reviewed source is not reachable from an authenticated origin ref"
+  merge_base="$(git -C "$SOURCE_DIR" merge-base "$main_sha" "$actual_sha")" \
+    || fail "reviewed source has no ancestry relationship with fetched origin/main"
+  git -C "$SOURCE_DIR" cat-file -e "${merge_base}^{commit}" \
+    || fail "origin/main merge-base object is missing"
   printf 'source_sha=%s\n' "$actual_sha"
   printf 'source_main_sha=%s\n' "$main_sha"
+  printf 'source_merge_base_sha=%s\n' "$merge_base"
   printf 'source_remote=%s\n' 'github.com/moonaries90/nonet'
 }
 
