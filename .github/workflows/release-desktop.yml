@@ -468,7 +468,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          set +e
+          set -euo pipefail
           SOURCE_DIR="$GITHUB_WORKSPACE/nonet" \
             bash release-automation/.github/scripts/production-macos-signing.sh cleanup
 
