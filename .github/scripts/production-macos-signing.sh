@@ -9,19 +9,17 @@ fail() {
 verify_provenance() {
   : "${SOURCE_DIR:?SOURCE_DIR is required}"
   : "${REQUESTED_SOURCE_SHA:?REQUESTED_SOURCE_SHA is required}"
+  : "${NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA:?NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA is required}"
   [[ "$REQUESTED_SOURCE_SHA" =~ ^[[:xdigit:]]{40}$ ]] \
     || fail "source_ref must be a full 40-hex commit SHA"
+  [[ "$NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA" =~ ^[[:xdigit:]]{40}$ ]] \
+    || fail "protected review pin must be a full 40-hex commit SHA"
   local actual_sha
-  actual_sha="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
+  actual_sha="$(git -C "$SOURCE_DIR" rev-parse --verify 'HEAD^{commit}')"
   [[ "$actual_sha" == "$REQUESTED_SOURCE_SHA" ]] \
     || fail "checked-out source does not match source_ref"
-  git -C "$SOURCE_DIR" fetch --no-tags origin main
-  if ! git -C "$SOURCE_DIR" merge-base --is-ancestor \
-    "$actual_sha" origin/main; then
-    [[ -n "${NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA:-}" \
-      && "$actual_sha" == "$NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA" ]] \
-      || fail "source commit is neither on origin/main nor the protected review pin"
-  fi
+  [[ "$actual_sha" == "$NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA" ]] \
+    || fail "checked-out source does not match the protected review pin"
   printf 'source_sha=%s\n' "$actual_sha"
 }
 
@@ -44,7 +42,9 @@ setup() {
     rm -f -- "$p12_file" "$password_file"
     rmdir "$secret_dir" >/dev/null 2>&1 || true
   }
-  trap cleanup_inputs EXIT ERR INT TERM
+  trap cleanup_inputs EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   printf '%s' "$NONET_MACOS_SIGNING_P12_B64" | base64 --decode > "$p12_file" \
     || fail "NONET_MACOS_SIGNING_P12_B64 is not valid base64"
   printf '%s' "$NONET_MACOS_SIGNING_P12_PASSWORD" > "$password_file"
@@ -59,7 +59,7 @@ setup() {
     bash "$SOURCE_DIR/scripts/macos-signing-keychain.sh" setup)"
   cat "$env_file" >> "$GITHUB_ENV"
   cleanup_inputs
-  trap - EXIT ERR INT TERM
+  trap - EXIT INT TERM
   # Values below are fingerprints and paths, never private material.
   # shellcheck disable=SC1090
   source "$env_file"
