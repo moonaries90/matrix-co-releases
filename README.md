@@ -123,8 +123,8 @@ artifact has been verified.
 ### macOS CI package
 
 Run the **Build macOS desktop** workflow with the same source commit used for
-Windows. It packages the existing `scripts/package-desktop.sh` pipeline on an
-Apple Silicon runner, imports the stable self-signed identity into an ephemeral
-keychain, verifies the app's certificate-bound signature and architecture,
-validates the DMG, and uploads the DMG plus its SHA-256 checksum as a 14-day
-Actions artifact.
+Windows. It packages the canonical `scripts/package-desktop-local.sh` pipeline
+on an Apple Silicon runner, imports the stable self-signed identity into an
+ephemeral keychain, verifies the app's certificate-bound signature and
+architecture, validates the DMG, and uploads the DMG plus its SHA-256 checksum
+as a 14-day Actions artifact.
