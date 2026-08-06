@@ -56,6 +56,9 @@ end
 
 checkout = step_named.call("Check out private Nonet source")
 fail_contract("production source checkout is missing") unless checkout
+unless scalar_value(mapping_value(checkout, "uses")) == "actions/checkout@v6"
+  fail_contract("production source checkout uses an unexpected action")
+end
 checkout_with = mapping_value(checkout, "with")
 expected_checkout = {
   "repository" => "moonaries90/nonet",

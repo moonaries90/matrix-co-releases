@@ -41,6 +41,27 @@ RUBY
 expect_failure quoted-push \
   bash "$quoted_push_fixture/.github/scripts/assert-macos-signing-workflows.sh"
 
+checkout_action_fixture="$(make_fixture checkout-action)"
+ruby - "$checkout_action_fixture/.github/workflows/release-desktop.yml" <<'RUBY'
+path = ARGV.fetch(0)
+text = File.binread(path)
+job_start = text.index("\n  package-mac:") or abort "package-mac fixture anchor missing"
+job_end = text.index(/^  [[:alnum:]_-]+:/, job_start + "\n  package-mac:".length) || text.length
+job = text[job_start...job_end]
+anchor = <<'YAML'
+      - name: Check out private Nonet source
+        uses: actions/checkout@v6
+        with:
+          repository: moonaries90/nonet
+YAML
+replacement = anchor.sub("uses: actions/checkout@v6", "uses: attacker/checkout@v6")
+abort "checkout-action fixture anchor missing" unless job.sub!(anchor, replacement)
+text[job_start...job_end] = job
+File.binwrite(path, text)
+RUBY
+expect_failure unexpected-checkout-action \
+  bash "$checkout_action_fixture/.github/scripts/assert-macos-signing-workflows.sh"
+
 comment_bypass_fixture="$(make_fixture comment-bypass)"
 ruby - "$comment_bypass_fixture/.github/scripts/production-macos-signing.sh" <<'RUBY'
 path = ARGV.fetch(0)
