@@ -63,6 +63,7 @@ checkout_with = mapping_value(checkout, "with")
 expected_checkout = {
   "repository" => "moonaries90/nonet",
   "ref" => "${{ inputs.source_ref }}",
+  "path" => "nonet",
   "ssh-key" => "${{ secrets.MATRIX_CO_SOURCE_DEPLOY_KEY }}",
   "persist-credentials" => "false",
   "fetch-depth" => "0"
