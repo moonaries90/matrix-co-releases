@@ -30,6 +30,15 @@ if grep -Eq 'NONET_MACOS_SIGNING_(P12_B64|P12_PASSWORD)' \
 fi
 
 release_workflow="$ROOT/.github/workflows/release-desktop.yml"
+[[ "$(grep -c '^on:$' "$release_workflow" || true)" == "1" ]] \
+  || fail "release workflow must use exactly one literal top-level on: block"
+raw_event_lines="$(awk '
+  $0 == "on:" { in_on=1; next }
+  in_on && /^[^[:space:]]/ { exit }
+  in_on && /^  [^[:space:]]/ && $0 !~ /^  #/ { print }
+' "$release_workflow")"
+[[ "$raw_event_lines" == '  workflow_dispatch:' ]] \
+  || fail "release workflow must use only the literal event line:   workflow_dispatch:"
 ruby "$ROOT/.github/scripts/assert-macos-signing-workflows.rb" "$release_workflow"
 
 regression_job="$(sed -n '/^  macos-signing-regression:/,/^  [[:alnum:]_-]*:/p' \
@@ -69,6 +78,16 @@ grep -Fq 'signing-evidence-macos.txt' <<<"$production_job" \
   || fail "production macOS job does not persist non-secret signing evidence"
 grep -Fq 'dmgSha256' <<<"$production_job" \
   || fail "production macOS evidence does not bind the DMG digest"
+
+provenance_script="$ROOT/.github/scripts/production-macos-signing.sh"
+exact_main_line='  [[ "$actual_sha" == "$main_sha" ]] \'
+exact_failure_line='    || fail "checked-out source is not the authenticated origin/main commit"'
+[[ "$(grep -Fxc -- "$exact_main_line" "$provenance_script" || true)" == "1" ]] \
+  || fail "production provenance lacks the exact executable origin/main comparison"
+exact_main_line_number="$(grep -Fn -- "$exact_main_line" "$provenance_script" | cut -d: -f1)"
+next_line="$(sed -n "$((exact_main_line_number + 1))p" "$provenance_script")"
+[[ "$next_line" == "$exact_failure_line" ]] \
+  || fail "production provenance exact-main comparison is not fail closed"
 
 bash "$ROOT/.github/scripts/production-macos-signing.test.sh" >/dev/null
 
