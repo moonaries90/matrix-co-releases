@@ -7,49 +7,40 @@ macOS and x64 Windows, then update the product website.
 
 The source repository is private and is read-only during this process.
 
-```bash
-git -C /Users/lji/projects/github/nonet fetch origin
-git -C /Users/lji/projects/github/nonet status --short --branch
-git -C /Users/lji/projects/github/nonet rev-parse HEAD
-git -C /Users/lji/projects/github/nonet rev-parse origin/main
-```
-
-Proceed only when the intended source tree is clean and the selected commit is
-already available on GitHub. Record the full 40-character SHA. Use that exact
-SHA for the release workflow; do not use `main` for a production release
-because it can move between jobs.
+The production source is always the exact commit currently advertised as
+`moonaries90/nonet` `main`. The canonical trigger resolves that full
+40-character SHA through the authenticated GitHub API and passes the immutable
+value to the workflow. It never passes a branch name.
 
 ## 2. Run the dual-platform release workflow
 
-From this repository:
+From a current `moonaries90/nonet` checkout:
 
 ```bash
-SOURCE_SHA=<full-nonet-commit-sha>
-gh workflow run release-desktop.yml \
-  --repo moonaries90/nonet-releases \
-  -f source_ref="$SOURCE_SHA"
+scripts/trigger-github-actions.sh
 ```
 
-Policy requires `SOURCE_SHA` to be the reviewed full SHA merged into
-`moonaries90/nonet` `main`. Before production signing, the owner records that
-exact SHA in the protected Environment's
-`NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA` variable and separately approves the
-deployment. Automation fails closed unless the requested SHA, checked-out HEAD,
-and reviewed variable are identical; it also requires an authenticated local
-`origin/*` ref and a real merge base with `origin/main`. The Environment's
-main-only deployment policy protects the `nonet-releases` workflow ref and does
-not itself prove source-repository main ancestry.
+The explicit script invocation is the signing authorization. The protected job
+does not use a second deployment approval or a manually maintained source-SHA
+pin. It fails closed unless the requested full SHA, checked-out `HEAD`, and the
+authenticated local `refs/remotes/origin/main` fetched by the deploy-key
+checkout are identical. Signing setup performs no network fetch. The
+`production-signing` Environment remains attached to the job and permits only
+the `nonet-releases` `main` workflow ref.
+
+Residual risk: neither repository currently protects its `main` branch. A
+collaborator able to move either main can change the source or workflow that a
+later explicit trigger runs. Today `moonaries90` is the only direct
+collaborator; manual dispatch is the intended authorization boundary.
 
 The default tag is `desktop-YYYY.MM.DD`, and successful runs publish only after
 the complete six-asset draft has been verified. To exercise the full build
-without publishing, provide a unique test tag and keep the result as a draft:
+without publishing, provide a unique test tag and disable publication:
 
 ```bash
-gh workflow run release-desktop.yml \
-  --repo moonaries90/nonet-releases \
-  -f source_ref="$SOURCE_SHA" \
-  -f release_tag="desktop-ci-test-$(date -u +%Y%m%d%H%M%S)" \
-  -f publish_release=false
+scripts/trigger-github-actions.sh \
+  --release-tag "desktop-ci-test-$(date -u +%Y%m%d%H%M%S)" \
+  --draft
 ```
 
 When `publish_release=false`, the workflow does not create even a draft GitHub

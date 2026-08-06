@@ -9,18 +9,14 @@ fail() {
 verify_provenance() {
   : "${SOURCE_DIR:?SOURCE_DIR is required}"
   : "${REQUESTED_SOURCE_SHA:?REQUESTED_SOURCE_SHA is required}"
-  : "${NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA:?NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA is required}"
   [[ "$REQUESTED_SOURCE_SHA" =~ ^[[:xdigit:]]{40}$ ]] \
     || fail "source_ref must be a full 40-hex commit SHA"
-  [[ "$NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA" =~ ^[[:xdigit:]]{40}$ ]] \
-    || fail "protected review pin must be a full 40-hex commit SHA"
   [[ -z "${GIT_OBJECT_DIRECTORY:-}" \
     && -z "${GIT_ALTERNATE_OBJECT_DIRECTORIES:-}" \
     && -z "${GIT_REPLACE_REF_BASE:-}" ]] \
     || fail "Git object or replacement overrides are forbidden"
 
-  local expected_remote actual_remote main_ref actual_sha main_sha merge_base git_path
-  local containing_refs
+  local expected_remote actual_remote main_ref actual_sha main_sha git_path
   expected_remote='git@github.com:moonaries90/nonet.git'
   actual_remote="$(git -C "$SOURCE_DIR" config --local --get remote.origin.url)" \
     || fail "source checkout has no origin URL"
@@ -30,8 +26,10 @@ verify_provenance() {
     || fail "source checkout has ambiguous origin URLs"
 
   git_path="$(git -C "$SOURCE_DIR" rev-parse --git-path info/grafts)"
+  [[ "$git_path" == /* ]] || git_path="$SOURCE_DIR/$git_path"
   [[ ! -s "$git_path" ]] || fail "Git grafts are forbidden"
   git_path="$(git -C "$SOURCE_DIR" rev-parse --git-path objects/info/alternates)"
+  [[ "$git_path" == /* ]] || git_path="$SOURCE_DIR/$git_path"
   [[ ! -s "$git_path" ]] || fail "Git object alternates are forbidden"
   [[ -z "$(git -C "$SOURCE_DIR" for-each-ref --format='%(refname)' refs/replace)" ]] \
     || fail "Git replacement refs are forbidden"
@@ -45,25 +43,15 @@ verify_provenance() {
     || fail "checked-out commit object is missing"
   [[ "$actual_sha" == "$REQUESTED_SOURCE_SHA" ]] \
     || fail "checked-out source does not match source_ref"
-  [[ "$actual_sha" == "$NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA" ]] \
-    || fail "checked-out source does not match the protected review pin"
   main_ref='refs/remotes/origin/main'
   main_sha="$(git -C "$SOURCE_DIR" rev-parse --verify "${main_ref}^{commit}")" \
     || fail "authenticated checkout did not fetch origin/main"
   git -C "$SOURCE_DIR" cat-file -e "${main_sha}^{commit}" \
     || fail "origin/main commit object is missing"
-  containing_refs="$(git -C "$SOURCE_DIR" for-each-ref --contains "$actual_sha" \
-    --format='%(refname)' refs/remotes/origin | \
-    grep -v '^refs/remotes/origin/HEAD$' || true)"
-  [[ -n "$containing_refs" ]] \
-    || fail "reviewed source is not reachable from an authenticated origin ref"
-  merge_base="$(git -C "$SOURCE_DIR" merge-base "$main_sha" "$actual_sha")" \
-    || fail "reviewed source has no ancestry relationship with fetched origin/main"
-  git -C "$SOURCE_DIR" cat-file -e "${merge_base}^{commit}" \
-    || fail "origin/main merge-base object is missing"
+  [[ "$actual_sha" == "$main_sha" ]] \
+    || fail "checked-out source is not the authenticated origin/main commit"
   printf 'source_sha=%s\n' "$actual_sha"
   printf 'source_main_sha=%s\n' "$main_sha"
-  printf 'source_merge_base_sha=%s\n' "$merge_base"
   printf 'source_remote=%s\n' 'github.com/moonaries90/nonet'
 }
 

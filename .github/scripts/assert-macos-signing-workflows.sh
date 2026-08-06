@@ -30,6 +30,16 @@ if grep -Eq 'NONET_MACOS_SIGNING_(P12_B64|P12_PASSWORD)' \
 fi
 
 release_workflow="$ROOT/.github/workflows/release-desktop.yml"
+trigger_block="$(awk '
+  /^on:$/ { capture=1; next }
+  capture && /^[^[:space:]]/ { exit }
+  capture { print }
+' "$release_workflow")"
+top_level_triggers="$(grep -E '^  [[:alnum:]_-]+:' <<<"$trigger_block" | \
+  sed -E 's/^  ([[:alnum:]_-]+):.*/\1/')"
+[[ "$top_level_triggers" == 'workflow_dispatch' ]] \
+  || fail "release workflow must be workflow_dispatch-only"
+
 regression_job="$(sed -n '/^  macos-signing-regression:/,/^  [[:alnum:]_-]*:/p' \
   "$release_workflow")"
 production_job="$(sed -n '/^  package-mac:/,/^  [[:alnum:]_-]*:/p' \
@@ -48,6 +58,13 @@ if grep -Eq 'environment: production-signing|NONET_MACOS_SIGNING_(P12_B64|P12_PA
 fi
 grep -Fq 'macos-signing-regression' <<<"$production_job" \
   || fail "production macOS package job does not require the isolated regression suite"
+grep -Fq 'fetch-depth: 0' <<<"$production_job" \
+  || fail "production macOS source checkout does not fetch authenticated origin refs"
+grep -Fq 'REQUESTED_SOURCE_SHA: ${{ inputs.source_ref }}' <<<"$production_job" \
+  || fail "production macOS job does not bind provenance to the dispatch SHA"
+if grep -Fq 'NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA' <<<"$production_job"; then
+  fail "production macOS job still depends on a manually maintained SHA pin"
+fi
 grep -Fq 'verify-active-macos-signing-identity.sh' <<<"$active_contract_step" \
   || fail "production signing contract does not use the active-identity verifier"
 if grep -Fq 'package-desktop-signing.test.sh' <<<"$production_job"; then
@@ -60,5 +77,13 @@ grep -Fq 'signing-evidence-macos.txt' <<<"$production_job" \
   || fail "production macOS job does not persist non-secret signing evidence"
 grep -Fq 'dmgSha256' <<<"$production_job" \
   || fail "production macOS evidence does not bind the DMG digest"
+
+provenance_script="$ROOT/.github/scripts/production-macos-signing.sh"
+grep -Fq '[[ "$actual_sha" == "$main_sha" ]]' "$provenance_script" \
+  || fail "production provenance does not require exact authenticated origin/main"
+if grep -Eq 'for-each-ref --contains|merge-base|NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA' \
+  "$provenance_script"; then
+  fail "production provenance retains a non-main or manually pinned authorization path"
+fi
 
 echo "assert-macos-signing-workflows: passed"
