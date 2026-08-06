@@ -98,10 +98,12 @@ draft, uploads and verifies all six public assets, and only then publishes the
 release. Update the website only after the workflow has published and verified
 the release.
 
+From a current `moonaries90/nonet` checkout, use the canonical trigger. It
+resolves the exact full SHA currently advertised as source `main`; the workflow
+rejects any other source commit.
+
 ```bash
-gh workflow run release-desktop.yml \
-  --repo moonaries90/nonet-releases \
-  -f source_ref=<full-nonet-commit-sha>
+scripts/trigger-github-actions.sh
 ```
 
 The older platform-specific build workflows remain available for package
