@@ -46,6 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           bash .github/scripts/assert-macos-signing-workflows.sh
+          bash .github/scripts/assert-macos-signing-workflows.test.sh
           bash .github/scripts/production-macos-signing.test.sh
 
   macos-signing-regression:

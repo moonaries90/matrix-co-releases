@@ -30,15 +30,7 @@ if grep -Eq 'NONET_MACOS_SIGNING_(P12_B64|P12_PASSWORD)' \
 fi
 
 release_workflow="$ROOT/.github/workflows/release-desktop.yml"
-trigger_block="$(awk '
-  /^on:$/ { capture=1; next }
-  capture && /^[^[:space:]]/ { exit }
-  capture { print }
-' "$release_workflow")"
-top_level_triggers="$(grep -E '^  [[:alnum:]_-]+:' <<<"$trigger_block" | \
-  sed -E 's/^  ([[:alnum:]_-]+):.*/\1/')"
-[[ "$top_level_triggers" == 'workflow_dispatch' ]] \
-  || fail "release workflow must be workflow_dispatch-only"
+ruby "$ROOT/.github/scripts/assert-macos-signing-workflows.rb" "$release_workflow"
 
 regression_job="$(sed -n '/^  macos-signing-regression:/,/^  [[:alnum:]_-]*:/p' \
   "$release_workflow")"
@@ -78,12 +70,6 @@ grep -Fq 'signing-evidence-macos.txt' <<<"$production_job" \
 grep -Fq 'dmgSha256' <<<"$production_job" \
   || fail "production macOS evidence does not bind the DMG digest"
 
-provenance_script="$ROOT/.github/scripts/production-macos-signing.sh"
-grep -Fq '[[ "$actual_sha" == "$main_sha" ]]' "$provenance_script" \
-  || fail "production provenance does not require exact authenticated origin/main"
-if grep -Eq 'for-each-ref --contains|merge-base|NONET_MACOS_SIGNING_APPROVED_SOURCE_SHA' \
-  "$provenance_script"; then
-  fail "production provenance retains a non-main or manually pinned authorization path"
-fi
+bash "$ROOT/.github/scripts/production-macos-signing.test.sh" >/dev/null
 
 echo "assert-macos-signing-workflows: passed"
