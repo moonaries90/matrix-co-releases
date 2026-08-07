@@ -91,6 +91,24 @@ jobs:
           set -euo pipefail
           [[ "$(uname -m)" == "arm64" ]]
 
+      - name: Materialize macOS signing certificate
+        shell: bash
+        env:
+          NONET_MACOS_SIGNING_CERT_P12_B64: ${{ secrets.NONET_MACOS_SIGNING_CERT_P12_B64 }}
+          NONET_MACOS_SIGNING_CERT_PASSWORD: ${{ secrets.NONET_MACOS_SIGNING_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          certificate="$RUNNER_TEMP/nonet-macos-signing.p12"
+          password_file="$RUNNER_TEMP/nonet-macos-signing.password"
+          printf '%s' "$NONET_MACOS_SIGNING_CERT_P12_B64" | base64 -D > "$certificate"
+          printf '%s' "$NONET_MACOS_SIGNING_CERT_PASSWORD" > "$password_file"
+          chmod 600 "$certificate" "$password_file"
+          {
+            printf 'NONET_MACOS_SIGNING_P12_FILE=%s\n' "$certificate"
+            printf 'NONET_MACOS_SIGNING_PASSWORD_FILE=%s\n' "$password_file"
+          } >> "$GITHUB_ENV"
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
